@@ -1,0 +1,16 @@
+services:
+  homebuster:
+    build: .
+    container_name: homebuster
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      SECRET_KEY: "change-this-to-a-long-random-value"
+      PASSWORD_MIN_LENGTH: "8"
+      TMDB_API_KEY: ""
+      UPCITEMDB_API_KEY: ""
+      UPCITEMDB_FREE_ENABLED: "false"
+      BARCODE_LOOKUP_URL: ""
+    volumes:
+      - ./data:/data

@@ -1,6 +1,0 @@
-{% extends 'base.html' %}{% block content %}
-<section class="panel narrow"><h1>Create Movie Library</h1><form method="post" class="stack">
-<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-<label>Library name<input name="name" placeholder="My Movies" required autofocus></label>
-<button class="primary">Create Library</button></form></section>
-{% endblock %}

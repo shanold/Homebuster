@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import secrets
 from pathlib import Path
 
@@ -28,6 +29,7 @@ def _ensure_secret_key(app: Flask) -> None:
 
 def create_app(test_config=None) -> Flask:
     app = Flask(__name__)
+    app.logger.setLevel(logging.INFO)
     app.config.from_object(Config)
     if test_config:
         app.config.update(test_config)
@@ -63,9 +65,10 @@ def create_app(test_config=None) -> Flask:
 
     @app.get("/healthz")
     def healthz():
-        return {"status": "ok"}
+        return {"status": "ok", "app": app.config.get("APP_NAME", "Homebuster"), "version": app.config.get("APP_VERSION", "0.2.0")}
 
     with app.app_context():
         db.initialize_database()
+        app.logger.info("Homebuster %s ready; database=%s", app.config.get("APP_VERSION", "0.2.0"), app.config["DATABASE_PATH"])
 
     return app

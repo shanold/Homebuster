@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from functools import wraps
 
-from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
+from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from .db import backup_database, get_db
+from .password_policy import password_length_error, password_min_length
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
 
@@ -30,7 +31,7 @@ def users():
         FROM users u ORDER BY u.username COLLATE NOCASE
         """
     ).fetchall()
-    return render_template("admin_users.html", users=rows)
+    return render_template("admin_users.html", users=rows, password_min_length=password_min_length(current_app.config))
 
 
 @bp.post("/users/<username>/reset-password")
@@ -40,8 +41,8 @@ def reset_password(username):
         flash("Use the CLI to change your own admin password.", "warning")
         return redirect(url_for("admin.users"))
     password = request.form.get("new_password") or ""
-    if len(password) < 10:
-        flash("New password must be at least 10 characters.", "error")
+    if error := password_length_error(password, current_app.config, label="New password"):
+        flash(error, "error")
     else:
         db = get_db(); target = db.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
         if not target: abort(404)

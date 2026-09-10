@@ -1,7 +1,7 @@
 services:
-  movie-library:
+  homebuster:
     build: .
-    container_name: movie-library
+    container_name: Homebuster
     restart: unless-stopped
     ports:
       - "8080:8000"

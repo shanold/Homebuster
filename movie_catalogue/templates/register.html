@@ -1,12 +1,12 @@
-{% extends 'base.html' %}{% block title %}Register · Movie Library{% endblock %}
+{% extends 'base.html' %}{% block title %}Register · Homebuster{% endblock %}
 {% block content %}
 <section class="auth-card">
   <h1>Create account</h1><p>No email address is required. A private <strong>My Movies</strong> Library is created automatically.</p>
   <form method="post" class="stack">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <label>Username<input name="username" minlength="3" maxlength="32" required autofocus></label>
-    <label>Password<input type="password" name="password" minlength="10" required></label>
-    <label>Confirm password<input type="password" name="confirm_password" minlength="10" required></label>
+    <label>Password<input type="password" name="password" minlength="{{ password_min_length }}" required></label>
+    <label>Confirm password<input type="password" name="confirm_password" minlength="{{ password_min_length }}" required></label>
     <button class="primary">Create account</button>
   </form>
   <p class="muted"><a href="{{ url_for('auth.login') }}">Back to sign in</a></p>

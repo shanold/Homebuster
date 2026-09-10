@@ -8,6 +8,7 @@ from flask_login import LoginManager, UserMixin, current_user, login_required, l
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from .db import get_db
+from .password_policy import password_length_error, password_min_length
 
 bp = Blueprint("auth", __name__)
 login_manager = LoginManager()
@@ -72,8 +73,8 @@ def register():
         confirm = request.form.get("confirm_password") or ""
         if not USERNAME_RE.fullmatch(username):
             flash("Username must be 3-32 characters using letters, numbers, _ or -.", "error")
-        elif len(password) < 10:
-            flash("Password must be at least 10 characters.", "error")
+        elif error := password_length_error(password, current_app.config):
+            flash(error, "error")
         elif password != confirm:
             flash("Passwords do not match.", "error")
         else:
@@ -95,7 +96,7 @@ def register():
                 session["auth_version"] = user.auth_version
                 flash("Account created. Welcome!", "success")
                 return redirect(url_for("libraries.index"))
-    return render_template("register.html")
+    return render_template("register.html", password_min_length=password_min_length(current_app.config))
 
 
 @bp.post("/logout")

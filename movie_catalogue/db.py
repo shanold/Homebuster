@@ -10,6 +10,8 @@ from flask import current_app, g
 from flask.cli import with_appcontext
 from werkzeug.security import generate_password_hash
 
+from .password_policy import password_length_error
+
 
 def get_db() -> sqlite3.Connection:
     if "db" not in g:
@@ -170,6 +172,8 @@ def _bootstrap_admin(db: sqlite3.Connection) -> None:
     existing = db.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
     if existing:
         return
+    if error := password_length_error(password, current_app.config, label="INITIAL_ADMIN_PASSWORD"):
+        raise RuntimeError(error)
     cur = db.execute(
         "INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, 1)",
         (username, generate_password_hash(password)),
@@ -312,8 +316,8 @@ def initialize_database() -> None:
 @click.option("--password", prompt=True, hide_input=True, confirmation_prompt=True)
 @with_appcontext
 def create_admin_command(username: str, password: str) -> None:
-    if len(password) < 10:
-        raise click.ClickException("Password must be at least 10 characters.")
+    if error := password_length_error(password, current_app.config):
+        raise click.ClickException(error)
     db = get_db()
     existing = db.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
     if existing:
@@ -322,7 +326,7 @@ def create_admin_command(username: str, password: str) -> None:
             (generate_password_hash(password), existing["id"]),
         )
         db.commit()
-        click.echo(f"Updated {username} and granted site-admin access.")
+        click.echo(f"Homebuster updated {username} and granted site-admin access.")
         return
     cur = db.execute(
         "INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, 1)",
@@ -330,7 +334,7 @@ def create_admin_command(username: str, password: str) -> None:
     )
     db.execute("INSERT INTO libraries (name, owner_id) VALUES ('My Movies', ?)", (cur.lastrowid,))
     db.commit()
-    click.echo(f"Created site admin {username}.")
+    click.echo(f"Homebuster created site admin {username}.")
 
 
 def init_app(app) -> None:

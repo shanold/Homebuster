@@ -1,6 +1,8 @@
 import os
 from pathlib import Path
 
+from .password_policy import password_min_length
+
 
 def env_bool(name: str, default: bool = False) -> bool:
     value = os.getenv(name)
@@ -14,9 +16,12 @@ def default_database_path() -> str:
 
 
 class Config:
+    APP_NAME = "Homebuster"
+    APP_VERSION = "0.2.0"
     DATABASE_PATH = default_database_path()
     SECRET_KEY = os.getenv("SECRET_KEY", "")
     ALLOW_REGISTRATION = env_bool("ALLOW_REGISTRATION", False)
+    PASSWORD_MIN_LENGTH = password_min_length(os.environ)
     INITIAL_ADMIN_USERNAME = os.getenv("INITIAL_ADMIN_USERNAME", "")
     INITIAL_ADMIN_PASSWORD = os.getenv("INITIAL_ADMIN_PASSWORD", "")
     TMDB_API_KEY = os.getenv("TMDB_API_KEY", "")

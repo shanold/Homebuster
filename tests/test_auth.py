@@ -50,3 +50,23 @@ def test_admin_has_no_implicit_library_access(client, app):
     _, private_library = create_user(app, "bob")
     login(client, "admin")
     assert client.get(f"/libraries/{private_library}").status_code == 403
+
+
+def test_registration_uses_configured_password_minimum(tmp_path):
+    from movie_catalogue import create_app
+    app = create_app({
+        "TESTING": True,
+        "WTF_CSRF_ENABLED": False,
+        "DATABASE_PATH": str(tmp_path / "password-policy.db"),
+        "SECRET_KEY": "test-secret",
+        "ALLOW_REGISTRATION": True,
+        "PASSWORD_MIN_LENGTH": 14,
+    })
+    client = app.test_client()
+
+    response = client.post(
+        "/register",
+        data={"username": "alice", "password": "thirteenchars", "confirm_password": "thirteenchars"},
+        follow_redirects=True,
+    )
+    assert b"Password must be at least 14 characters." in response.data

@@ -49,3 +49,59 @@ def test_csv_export_is_scoped_to_library(client, app):
     assert response.status_code == 200
     assert b"Jaws" in response.data
     assert b"barcode,title,year" in response.data
+
+
+def test_add_movie_starts_with_tmdb_lookup(client, app, monkeypatch):
+    _, library_id = create_user(app, "lookupowner")
+    login(client, "lookupowner")
+    app.config["TMDB_API_KEY"] = "test-key"
+
+    from movie_catalogue import catalog
+    monkeypatch.setattr(catalog, "_tmdb_search", lambda title, year=None: [{
+        "id": 557,
+        "title": "Spider-Man",
+        "release_date": "2002-05-01",
+        "poster_path": "/spider.jpg",
+        "overview": "Peter Parker becomes Spider-Man.",
+    }])
+
+    response = client.get(f"/libraries/{library_id}/movies/new?q=spiderman")
+    assert response.status_code == 200
+    assert b"Search TMDb" in response.data
+    assert b"Spider-Man" in response.data
+    assert b"Use this movie" in response.data
+
+
+def test_tmdb_selection_prefills_manual_add_form(client, app, monkeypatch):
+    _, library_id = create_user(app, "prefillowner")
+    login(client, "prefillowner")
+    app.config["TMDB_API_KEY"] = "test-key"
+
+    from movie_catalogue import catalog
+    monkeypatch.setattr(catalog, "_tmdb_details", lambda tmdb_id: {
+        "id": tmdb_id,
+        "title": "Spider-Man",
+        "release_date": "2002-05-01",
+        "poster_path": "/spider.jpg",
+        "original_language": "en",
+        "production_countries": [{"name": "United States of America"}],
+    })
+
+    response = client.get(f"/libraries/{library_id}/movies/new/manual?tmdb_id=557")
+    assert response.status_code == 200
+    assert b'value="Spider-Man"' in response.data
+    assert b'value="2002"' in response.data
+    assert b'value="557"' in response.data
+    assert b"image.tmdb.org" in response.data
+    assert b"Add Movie" in response.data
+
+
+def test_manual_add_is_available_without_tmdb_key(client, app):
+    _, library_id = create_user(app, "manualowner")
+    login(client, "manualowner")
+    app.config["TMDB_API_KEY"] = ""
+
+    response = client.get(f"/libraries/{library_id}/movies/new")
+    assert response.status_code == 200
+    assert b"TMDb lookup is unavailable" in response.data
+    assert b"Add manually" in response.data

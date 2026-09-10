@@ -169,30 +169,121 @@ def library_home(library_id, library, role):
 @require_library_role("editor")
 def movie_new(library_id, library, role):
     db = get_db()
-    if request.method == "POST":
-        values = _movie_form_values(request.form)
-        if not values["title"]:
-            flash("Title is required.", "error")
+
+    # Adding starts with a TMDb search. Direct POST remains supported so CSV/tests
+    # and old clients that submit the movie form are not broken.
+    if request.method == "GET":
+        query = (request.args.get("q") or "").strip()
+        api_configured = bool(current_app.config.get("TMDB_API_KEY"))
+        results = []
+        if query and api_configured:
+            try:
+                results = _tmdb_search(query)
+            except requests.RequestException:
+                flash("TMDb search failed. Try again later or add the movie manually.", "error")
+        return render_template(
+            "movie_lookup.html",
+            library=library,
+            role=role,
+            query=query,
+            results=results,
+            api_configured=api_configured,
+            poster_size=current_app.config.get("TMDB_POSTER_SIZE", "w342"),
+        )
+
+    values = _movie_form_values(request.form)
+    if not values["title"]:
+        flash("Title is required.", "error")
+    else:
+        if values["shelf_id"]:
+            shelf = db.execute(
+                "SELECT id FROM shelves WHERE id=? AND library_id=?",
+                (values["shelf_id"], library_id),
+            ).fetchone()
+            if not shelf:
+                values["shelf_id"] = None
+        cur = db.execute(
+            """
+            INSERT INTO movies (
+                library_id,barcode,title,year,format,poster_path,tmdb_id,status,
+                version,country,language,region,disc_count,notes,shelf_id
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (library_id, *[values[k] for k in MOVIE_FIELDS]),
+        )
+        _sync_collections(db, library_id, cur.lastrowid, request.form)
+        db.commit()
+        flash("Movie added.", "success")
+        return redirect(url_for("catalog.movie_detail", library_id=library_id, movie_id=cur.lastrowid))
+
+    shelves = db.execute(
+        "SELECT * FROM shelves WHERE library_id=? ORDER BY sort_order,name COLLATE NOCASE",
+        (library_id,),
+    ).fetchall()
+    collections = db.execute(
+        "SELECT * FROM collections WHERE library_id=? ORDER BY name COLLATE NOCASE",
+        (library_id,),
+    ).fetchall()
+    return render_template(
+        "movie_form.html",
+        library=library,
+        role=role,
+        movie=None,
+        prefill=request.form,
+        shelves=shelves,
+        collections=collections,
+        selected_collections=[],
+    )
+
+
+@bp.get("/libraries/<int:library_id>/movies/new/manual")
+@login_required
+@require_library_role("editor")
+def movie_new_manual(library_id, library, role):
+    db = get_db()
+    prefill = {}
+    tmdb_id = request.args.get("tmdb_id", type=int)
+
+    if tmdb_id:
+        if not current_app.config.get("TMDB_API_KEY"):
+            flash("TMDb lookup is unavailable because TMDB_API_KEY is not configured.", "warning")
         else:
-            if values["shelf_id"]:
-                shelf = db.execute("SELECT id FROM shelves WHERE id=? AND library_id=?", (values["shelf_id"], library_id)).fetchone()
-                if not shelf:
-                    values["shelf_id"] = None
-            cur = db.execute(
-                """
-                INSERT INTO movies (
-                    library_id,barcode,title,year,format,poster_path,tmdb_id,status,
-                    version,country,language,region,disc_count,notes,shelf_id
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                """,
-                (library_id, *[values[k] for k in MOVIE_FIELDS]),
-            )
-            _sync_collections(db, library_id, cur.lastrowid, request.form)
-            db.commit(); flash("Movie added.", "success")
-            return redirect(url_for("catalog.movie_detail", library_id=library_id, movie_id=cur.lastrowid))
-    shelves = db.execute("SELECT * FROM shelves WHERE library_id=? ORDER BY sort_order,name COLLATE NOCASE", (library_id,)).fetchall()
-    collections = db.execute("SELECT * FROM collections WHERE library_id=? ORDER BY name COLLATE NOCASE", (library_id,)).fetchall()
-    return render_template("movie_form.html", library=library, role=role, movie=None, shelves=shelves, collections=collections, selected_collections=[])
+            try:
+                data = _tmdb_details(tmdb_id)
+            except requests.RequestException:
+                data = None
+                flash("TMDb lookup failed. You can still add the movie manually.", "error")
+            if data:
+                countries = data.get("production_countries") or []
+                prefill = {
+                    "title": data.get("title") or "",
+                    "year": (data.get("release_date") or "")[:4],
+                    "format": "Blu-ray",
+                    "status": "owned",
+                    "poster_path": _tmdb_poster_url(data.get("poster_path")),
+                    "tmdb_id": tmdb_id,
+                    "language": data.get("original_language") or "",
+                    "country": countries[0].get("name", "") if countries else "",
+                }
+
+    shelves = db.execute(
+        "SELECT * FROM shelves WHERE library_id=? ORDER BY sort_order,name COLLATE NOCASE",
+        (library_id,),
+    ).fetchall()
+    collections = db.execute(
+        "SELECT * FROM collections WHERE library_id=? ORDER BY name COLLATE NOCASE",
+        (library_id,),
+    ).fetchall()
+    return render_template(
+        "movie_form.html",
+        library=library,
+        role=role,
+        movie=None,
+        prefill=prefill,
+        shelves=shelves,
+        collections=collections,
+        selected_collections=[],
+    )
 
 
 @bp.get("/libraries/<int:library_id>/movies/<int:movie_id>")
@@ -464,12 +555,36 @@ def import_csv(library_id, library, role):
 
 def _tmdb_search(title: str, year: str | None = None):
     api_key = current_app.config.get("TMDB_API_KEY") or ""
-    if not api_key: return []
+    if not api_key:
+        return []
     params = {"api_key": api_key, "query": title}
-    if year: params["year"] = year
+    if year:
+        params["year"] = year
     response = requests.get("https://api.themoviedb.org/3/search/movie", params=params, timeout=10)
     response.raise_for_status()
     return response.json().get("results", [])[:20]
+
+
+def _tmdb_details(tmdb_id: int):
+    api_key = current_app.config.get("TMDB_API_KEY") or ""
+    if not api_key:
+        return None
+    response = requests.get(
+        f"https://api.themoviedb.org/3/movie/{tmdb_id}",
+        params={"api_key": api_key},
+        timeout=10,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def _tmdb_poster_url(poster_path: str | None) -> str | None:
+    if not poster_path:
+        return None
+    if poster_path.startswith("http://") or poster_path.startswith("https://"):
+        return poster_path
+    size = current_app.config.get("TMDB_POSTER_SIZE", "w342")
+    return f"https://image.tmdb.org/t/p/{size}{poster_path}"
 
 
 @bp.route("/libraries/<int:library_id>/movies/<int:movie_id>/identify", methods=["GET", "POST"])
@@ -485,14 +600,14 @@ def identify_movie(library_id, movie_id, library, role):
         tmdb_id = _int_or_none(request.form.get("tmdb_id"))
         if not tmdb_id: abort(400)
         try:
-            r = requests.get(f"https://api.themoviedb.org/3/movie/{tmdb_id}", params={"api_key": api_key}, timeout=10)
-            r.raise_for_status(); data = r.json()
+            data = _tmdb_details(tmdb_id)
         except requests.RequestException:
             flash("TMDb lookup failed. Try again later.", "error")
             return redirect(url_for("catalog.movie_detail", library_id=library_id, movie_id=movie_id))
-        poster = data.get("poster_path")
-        if poster:
-            poster = f"https://image.tmdb.org/t/p/{current_app.config.get('TMDB_POSTER_SIZE','w342')}{poster}"
+        if not data:
+            flash("TMDb lookup failed. Try again later.", "error")
+            return redirect(url_for("catalog.movie_detail", library_id=library_id, movie_id=movie_id))
+        poster = _tmdb_poster_url(data.get("poster_path"))
         db.execute(
             "UPDATE movies SET title=?,year=?,poster_path=?,tmdb_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND library_id=?",
             (data.get("title") or movie["title"], (data.get("release_date") or "")[:4] or movie["year"], poster, tmdb_id, movie_id, library_id),

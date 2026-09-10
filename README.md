@@ -1,4 +1,4 @@
-# Movie Library
+# Homebuster
 
 A community fork/rework of [TheMarveled/movie-cataloguer](https://github.com/TheMarveled/movie-cataloguer), focused on self-hosted personal and shared physical movie collections.
 
@@ -20,6 +20,7 @@ The original project is MIT licensed. This fork keeps the physical-media catalog
 - Search and filters for status, format, shelf, collection, and loan availability.
 - CSV import/export per Library.
 - TMDb identification for title/year/poster when `TMDB_API_KEY` is configured.
+- TMDb-first Add Movie search with a manual-entry fallback.
 - SQLite WAL mode and automatic backups before destructive Library/user operations.
 - Legacy Movie Cataloguer database migration.
 - Docker/Compose deployment using a persistent `./data` directory.
@@ -35,6 +36,7 @@ Edit `.env` before the first start. At minimum, give the initial admin a real pa
 
 ```env
 ALLOW_REGISTRATION=false
+PASSWORD_MIN_LENGTH=8
 INITIAL_ADMIN_USERNAME=admin
 INITIAL_ADMIN_PASSWORD=use-a-long-unique-password-here
 ```
@@ -58,10 +60,12 @@ After the admin account has been created successfully, remove `INITIAL_ADMIN_PAS
 You can also create a site admin without using bootstrap environment variables:
 
 ```bash
-docker compose exec movie-library flask --app app create-admin admin
+docker compose exec homebuster flask --app app create-admin admin
 ```
 
 The command prompts for the password without echoing it. If that username already exists, it resets the password and grants site-admin status.
+
+The Docker container is named `Homebuster`, so its logs can be viewed with `docker logs Homebuster`. Homebuster also identifies itself by name in its startup log.
 
 ## Registration
 
@@ -69,7 +73,10 @@ Registration defaults to disabled:
 
 ```env
 ALLOW_REGISTRATION=false
+PASSWORD_MIN_LENGTH=8
 ```
+
+`PASSWORD_MIN_LENGTH` controls the minimum password length for registration, admin password resets, first-boot admins, and the `create-admin` CLI command.
 
 Turn it on when you want new users to create accounts:
 

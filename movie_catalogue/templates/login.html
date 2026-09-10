@@ -1,0 +1,13 @@
+{% extends 'base.html' %}{% block title %}Sign in · Movie Library{% endblock %}
+{% block content %}
+<section class="auth-card">
+  <h1>Sign in</h1><p>Open your movie Libraries.</p>
+  <form method="post" class="stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>Username<input name="username" autocomplete="username" required autofocus></label>
+    <label>Password<input type="password" name="password" autocomplete="current-password" required></label>
+    <button class="primary">Sign in</button>
+  </form>
+  {% if config.ALLOW_REGISTRATION %}<p class="muted">Need an account? <a href="{{ url_for('auth.register') }}">Register</a></p>{% endif %}
+</section>
+{% endblock %}

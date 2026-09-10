@@ -1,0 +1,22 @@
+{% extends 'base.html' %}{% block content %}{% include '_library_nav.html' %}
+<section class="panel"><div class="page-heading"><h2>{{ 'Edit ' + movie.title if movie else 'Add Movie' }}</h2></div>
+<form method="post" class="form-grid">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<label class="wide">Title<input name="title" required value="{{ movie.title if movie else '' }}"></label>
+<label>Year<input name="year" value="{{ movie.year if movie and movie.year else '' }}"></label>
+<label>Barcode<input name="barcode" value="{{ movie.barcode if movie and movie.barcode else '' }}"></label>
+<label>Format<select name="format">{% for f in ['Blu-ray','4K','4K UHD','DVD','HD DVD','VHS','Other'] %}<option {% if movie and movie.format==f %}selected{% elif not movie and f=='Blu-ray' %}selected{% endif %}>{{ f }}</option>{% endfor %}</select></label>
+<label>Status<select name="status"><option value="owned" {% if not movie or movie.status=='owned' %}selected{% endif %}>Owned</option><option value="wanted" {% if movie and movie.status=='wanted' %}selected{% endif %}>Wanted</option></select></label>
+<label>Shelf<select name="shelf_id"><option value="">Unassigned</option>{% for s in shelves %}<option value="{{ s.id }}" {% if movie and movie.shelf_id==s.id %}selected{% endif %}>{{ s.name }}</option>{% endfor %}</select></label>
+<label>Disc count<input type="number" min="1" name="disc_count" value="{{ movie.disc_count if movie and movie.disc_count else '' }}"></label>
+<label>Version / edition<input name="version" placeholder="Steelbook, Director's Cut…" value="{{ movie.version if movie and movie.version else '' }}"></label>
+<label>Country<input name="country" value="{{ movie.country if movie and movie.country else '' }}"></label>
+<label>Language<input name="language" value="{{ movie.language if movie and movie.language else '' }}"></label>
+<label>Region<input name="region" value="{{ movie.region if movie and movie.region else '' }}"></label>
+<label>TMDb ID<input type="number" name="tmdb_id" value="{{ movie.tmdb_id if movie and movie.tmdb_id else '' }}"></label>
+<label class="wide">Poster URL<input type="url" name="poster_path" value="{{ movie.poster_path if movie and movie.poster_path else '' }}"></label>
+<label class="wide">Collections<select name="collection_ids" multiple size="5">{% for c in collections %}<option value="{{ c.id }}" {% if c.id in selected_collections %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select><small>Ctrl/Cmd-click for multiple.</small></label>
+<label class="wide">New Collections<input name="new_collections" placeholder="Evil Dead, Bruce Campbell Favorites"><small>Comma-separated; they will be created and assigned.</small></label>
+<label class="wide">Notes<textarea name="notes" rows="5">{{ movie.notes if movie and movie.notes else '' }}</textarea></label>
+<div class="wide actions"><button class="primary">{{ 'Save Changes' if movie else 'Add Movie' }}</button>{% if movie %}<a class="button" href="{{ url_for('catalog.movie_detail', library_id=library.id, movie_id=movie.id) }}">Cancel</a>{% else %}<a class="button" href="{{ url_for('catalog.library_home', library_id=library.id) }}">Cancel</a>{% endif %}</div>
+</form></section>{% endblock %}

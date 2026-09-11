@@ -18,7 +18,7 @@ checks={
 'barcode lookup model':'data class BarcodeLookup' in api and 'val lookup: BarcodeLookup?' in api,
 'barcode raw display':'r.product?.productTitle' in main,
 'barcode cleaned display':'TMDb search:' in main and 'r.lookup?.let' in main,
-'version 0.3.12':'versionName = "0.3.12"' in (root/'app/build.gradle.kts').read_text(),
+'version 0.3.13':'versionName = "0.3.13"' in (root/'app/build.gradle.kts').read_text(),
 'system bars':'systemBarsPadding()' in main,
 'grouped copies':'data class MovieGroup' in main and 'formatsSummary' in main and 'Physical copies' in main,
 'edition display':'lookup.edition' in main and 'lookup.format' in main,

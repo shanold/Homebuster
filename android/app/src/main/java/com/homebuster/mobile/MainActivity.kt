@@ -70,7 +70,11 @@ fun HomebusterApp(store: SessionStore) {
     var screen by remember { mutableStateOf(if (token == null || server.isBlank()) Screen.LOGIN else Screen.LIBRARY) }
     var selected by remember { mutableStateOf<MovieGroup?>(null) }
     var scanned by remember { mutableStateOf<BarcodeResponse?>(null) }
-    val api = remember(server) { if (server.startsWith("http://") || server.startsWith("https://")) ApiFactory.create(server) else null }
+    val api = remember(server, token) {
+        if (token != null && (server.startsWith("http://") || server.startsWith("https://"))) {
+            runCatching { ApiFactory.create(server) }.getOrNull()
+        } else null
+    }
 
     val navigateBack: () -> Unit = {
         screen = when (screen) {

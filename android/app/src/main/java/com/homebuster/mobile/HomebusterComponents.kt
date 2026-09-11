@@ -90,7 +90,8 @@ fun HomebusterEmptyState(message: String) {
 }
 
 @Composable
-fun HomebusterMovieCard(movie: Movie, onClick: () -> Unit) {
+fun HomebusterMovieCard(group: MovieGroup, onClick: () -> Unit) {
+    val movie = group.primary
     Card(
         Modifier.fillMaxWidth().clickable(onClick = onClick),
         colors = CardDefaults.cardColors(containerColor = HbPanel),
@@ -113,7 +114,8 @@ fun HomebusterMovieCard(movie: Movie, onClick: () -> Unit) {
         Column(Modifier.padding(12.dp)) {
             Text(movie.title, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(4.dp))
-            Text(listOfNotNull(movie.year?.toString(), movie.format).joinToString(" • "), color = HbMuted, style = MaterialTheme.typography.bodySmall)
+            movie.year?.let { Text(it.toString(), color = HbMuted, style = MaterialTheme.typography.bodySmall) }
+            Text(group.formatsSummary, color = HbAccent, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }
 }

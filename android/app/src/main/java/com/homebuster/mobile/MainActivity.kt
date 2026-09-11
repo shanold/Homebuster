@@ -37,6 +37,26 @@ class MainActivity : ComponentActivity() {
 
 enum class Screen { LOGIN, LIBRARY, DETAILS, COLLECTIONS, LOANS, SCANNER, BARCODE_RESULT }
 
+data class MovieGroup(val key: String, val primary: Movie, val copies: List<Movie>) {
+    val formatsSummary: String
+        get() = copies.groupingBy { it.format.ifBlank { "Unknown" } }.eachCount().entries
+            .sortedBy { it.key.lowercase() }
+            .joinToString(" • ") { (format, count) -> if (count > 1) "$format ×$count" else format }
+}
+
+private fun normalizeGroupTitle(title: String): String =
+    title.lowercase().replace(Regex("[^a-z0-9]+"), " ").trim()
+
+private fun groupMovies(movies: List<Movie>): List<MovieGroup> {
+    return movies.groupBy { movie ->
+        movie.tmdbId?.let { "tmdb:$it" }
+            ?: "manual:${normalizeGroupTitle(movie.title)}:${movie.year ?: ""}"
+    }.map { (key, copies) ->
+        val primary = copies.firstOrNull { it.posterUrl != null } ?: copies.first()
+        MovieGroup(key, primary, copies.sortedWith(compareBy<Movie> { it.format.lowercase() }.thenBy { it.version ?: "" }))
+    }.sortedBy { it.primary.title.lowercase() }
+}
+
 @Composable
 fun HomebusterApp(store: SessionStore) {
     val context = LocalContext.current
@@ -48,7 +68,7 @@ fun HomebusterApp(store: SessionStore) {
     var token by remember { mutableStateOf(store.token) }
     var serverVersion by remember { mutableStateOf<String?>(null) }
     var screen by remember { mutableStateOf(if (token == null || server.isBlank()) Screen.LOGIN else Screen.LIBRARY) }
-    var selected by remember { mutableStateOf<Movie?>(null) }
+    var selected by remember { mutableStateOf<MovieGroup?>(null) }
     var scanned by remember { mutableStateOf<BarcodeResponse?>(null) }
     val api = remember(server) { if (server.startsWith("http://") || server.startsWith("https://")) ApiFactory.create(server) else null }
 
@@ -60,7 +80,7 @@ fun HomebusterApp(store: SessionStore) {
     }
     BackHandler(enabled = screen != Screen.LOGIN && screen != Screen.LIBRARY) { navigateBack() }
 
-    Surface(Modifier.fillMaxSize(), color = HbBackground) {
+    Surface(Modifier.fillMaxSize().systemBarsPadding(), color = HbBackground) {
         when (screen) {
             Screen.LOGIN -> LoginScreen(server, { server = it }, localNetworkGranted, {
                 if (Build.VERSION.SDK_INT >= 37) localNetworkPermissionLauncher.launch(Manifest.permission.ACCESS_LOCAL_NETWORK)
@@ -178,11 +198,12 @@ private fun friendly(e: Exception): String = when (e) {
 }
 
 @Composable
-private fun LibraryScreen(api: HomebusterApi, token: String, serverVersion: String?, onMovie: (Movie) -> Unit, onCollections: () -> Unit, onLoans: () -> Unit, onScan: () -> Unit, onLogout: () -> Unit) {
+private fun LibraryScreen(api: HomebusterApi, token: String, serverVersion: String?, onMovie: (MovieGroup) -> Unit, onCollections: () -> Unit, onLoans: () -> Unit, onScan: () -> Unit, onLogout: () -> Unit) {
     var movies by remember { mutableStateOf<List<Movie>>(emptyList()) }
     var query by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(query) { try { movies = api.movies("Bearer $token", query.ifBlank { null }).movies; error = null } catch (e: Exception) { error = friendly(e) } }
+    val groups = remember(movies) { groupMovies(movies) }
     Column(Modifier.fillMaxSize()) {
         HomebusterTopBar("App v${BuildConfig.VERSION_NAME} • Server v${serverVersion ?: "unknown"}", "Log out", onLogout)
         Column(Modifier.fillMaxWidth().padding(16.dp)) {
@@ -196,20 +217,21 @@ private fun LibraryScreen(api: HomebusterApi, token: String, serverVersion: Stri
             Button(onClick = onScan, modifier = Modifier.fillMaxWidth()) { Text("Scan barcode") }
             error?.let { Spacer(Modifier.height(10.dp)); HomebusterErrorCard(it) }
         }
-        if (movies.isEmpty() && error == null) {
+        if (groups.isEmpty() && error == null) {
             Box(Modifier.fillMaxSize().padding(horizontal = 16.dp)) { HomebusterEmptyState(if (query.isBlank()) "No movies in this library yet." else "No movies match your search.") }
         } else {
             LazyVerticalGrid(
                 GridCells.Adaptive(155.dp), modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
                 horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) { items(movies, key = { it.id }) { HomebusterMovieCard(it) { onMovie(it) } } }
+            ) { items(groups, key = { it.key }) { group -> HomebusterMovieCard(group) { onMovie(group) } } }
         }
     }
 }
 
 @Composable
-private fun MovieDetailScreen(movie: Movie, onBack: () -> Unit) {
+private fun MovieDetailScreen(group: MovieGroup, onBack: () -> Unit) {
+    val movie = group.primary
     LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item { HomebusterScreenHeader("Movie details", onBack) }
         item {
@@ -220,10 +242,26 @@ private fun MovieDetailScreen(movie: Movie, onBack: () -> Unit) {
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                     movie.year?.let { HomebusterMetaChip(it.toString()) }
-                    if (movie.format.isNotBlank()) HomebusterMetaChip(movie.format)
                     movie.runtime?.let { HomebusterMetaChip("$it min") }
                 }
-                movie.upc?.let { Spacer(Modifier.height(10.dp)); Text("UPC: $it", color = HbMuted, style = MaterialTheme.typography.bodySmall) }
+                if (group.copies.size > 1) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(group.formatsSummary, color = HbMuted, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+        item {
+            HomebusterPanel {
+                Text(if (group.copies.size == 1) "Physical copy" else "Physical copies", fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
+                group.copies.forEachIndexed { index, copy ->
+                    if (index > 0) { Spacer(Modifier.height(10.dp)); HorizontalDivider(color = HbLine); Spacer(Modifier.height(10.dp)) }
+                    Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                        HomebusterMetaChip(copy.format.ifBlank { "Unknown" })
+                        copy.version?.takeIf { it.isNotBlank() }?.let { HomebusterMetaChip(it, HbAccent) }
+                    }
+                    copy.upc?.let { Text("UPC: $it", color = HbMuted, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp)) }
+                }
             }
         }
         if (movie.overview.isNotBlank()) item { HomebusterPanel { Text("Overview", fontWeight = FontWeight.Bold); Spacer(Modifier.height(6.dp)); Text(movie.overview, color = HbMuted) } }
@@ -288,6 +326,14 @@ private fun BarcodeResultScreen(api: HomebusterApi, token: String, upc: String, 
                             Spacer(Modifier.height(8.dp))
                             Text("Searching TMDb for:", color = HbMuted, style = MaterialTheme.typography.bodySmall)
                             Text(it.title + (it.year?.let { y -> " ($y)" } ?: ""), color = HbAccent)
+                            if (!it.format.isNullOrBlank() || !it.edition.isNullOrBlank()) {
+                                Spacer(Modifier.height(8.dp))
+                                Text("Detected from barcode:", color = HbMuted, style = MaterialTheme.typography.bodySmall)
+                                Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                                    it.format?.takeIf { value -> value.isNotBlank() }?.let { value -> HomebusterMetaChip(value) }
+                                    it.edition?.takeIf { value -> value.isNotBlank() }?.let { value -> HomebusterMetaChip(value, HbAccent) }
+                                }
+                            }
                         }
                         Spacer(Modifier.height(8.dp))
                         val count = r.tmdbResults?.size ?: 0

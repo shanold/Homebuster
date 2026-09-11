@@ -114,7 +114,7 @@ def health():
 def status():
     return jsonify({
         "name": current_app.config.get("APP_NAME", "Homebuster"),
-        "server_version": current_app.config.get("APP_VERSION", "0.3.6"),
+        "server_version": current_app.config.get("APP_VERSION", "0.3.7"),
         "api_version": "v1",
         "status": "ok",
     })
@@ -348,8 +348,8 @@ def add_movie():
     cur = db.execute(
         """
         INSERT INTO movies(
-            library_id,barcode,title,year,format,poster_path,tmdb_id,status,notes
-        ) VALUES (?,?,?,?,?,?,?,?,?)
+            library_id,barcode,title,year,format,poster_path,tmdb_id,status,version,notes
+        ) VALUES (?,?,?,?,?,?,?,?,?,?)
         """,
         (
             library_id,
@@ -360,6 +360,7 @@ def add_movie():
             data.get("poster_path"),
             data.get("tmdb_id"),
             "owned",
+            str(data.get("version") or "").strip() or None,
             None,
         ),
     )
@@ -451,6 +452,6 @@ def barcode_lookup(upc):
         "status": "product_match",
         "upc": upc,
         "product": product,
-        "lookup": {"title": search_title, "year": search_year},
+        "lookup": {"title": search_title, "year": search_year, "format": product.get("detected_format"), "edition": product.get("detected_edition")},
         "tmdb_results": matches,
     })

@@ -9,7 +9,7 @@ api=(src/'Api.kt').read_text()
 checks={
 'root theme':'setContent { HomebusterTheme' in main,
 'all web colors': all(x in theme for x in ['101218','191D26','222837','30384A','EEF1F7','9CA6B8','7AA2FF','345FC1','FF6B6B','62D49D','F4C66B']),
-'shared movie card':'fun HomebusterMovieCard' in comp and 'HomebusterMovieCard(it)' in main,
+'shared grouped movie card':'fun HomebusterMovieCard(group: MovieGroup' in comp and 'HomebusterMovieCard(group)' in main,
 'shared panels':'fun HomebusterPanel' in comp and main.count('HomebusterPanel') >= 7,
 'screen header':'fun HomebusterScreenHeader' in comp and 'HomebusterScreenHeader("Collections"' in main and 'HomebusterScreenHeader("Loans"' in main,
 'no raw ListItem':'ListItem(' not in main,
@@ -18,7 +18,10 @@ checks={
 'barcode lookup model':'data class BarcodeLookup' in api and 'val lookup: BarcodeLookup?' in api,
 'barcode raw display':'r.product?.productTitle' in main,
 'barcode cleaned display':'Searching TMDb for:' in main and 'r.lookup?.let' in main,
-'version 0.3.6':'versionName = "0.3.6"' in (root/'app/build.gradle.kts').read_text(),
+'version 0.3.7':'versionName = "0.3.7"' in (root/'app/build.gradle.kts').read_text(),
+'system bars':'systemBarsPadding()' in main,
+'grouped copies':'data class MovieGroup' in main and 'formatsSummary' in main and 'Physical copies' in main,
+'edition display':'it.edition' in main and 'it.format' in main,
 }
 failed=[k for k,v in checks.items() if not v]
 for k,v in checks.items(): print(('PASS' if v else 'FAIL'), k)

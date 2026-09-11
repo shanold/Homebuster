@@ -14,13 +14,14 @@
 <div class="toolbar">
   {% if role != 'viewer' %}<a class="button primary" href="{{ url_for('catalog.movie_new', library_id=library.id) }}">+ Add Movie</a>{% endif %}
   <a class="button" href="{{ url_for('catalog.export_csv', library_id=library.id) }}">Export CSV</a>
+  {% if role != 'viewer' %}<form method="post" action="{{ url_for('catalog.match_repair_movies', library_id=library.id) }}" class="inline" onsubmit="return confirm('Match unmatched movies and refresh TMDb metadata for this library? Only high-confidence new matches will be applied.')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button>Match / Repair Movies</button></form>{% endif %}
   {% if role != 'viewer' %}<form method="post" enctype="multipart/form-data" action="{{ url_for('catalog.import_csv', library_id=library.id) }}" class="inline import-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="file" name="csv_file" accept=".csv" required><button>Import CSV</button></form>{% endif %}
 </div>
 <div class="movie-grid">
 {% for movie in movies %}
 <a class="movie-card" href="{{ url_for('catalog.movie_detail', library_id=library.id, movie_id=movie.id) }}">
   <div class="poster-wrap">{% if movie.poster_path %}<img src="{{ movie.poster_path }}" alt="Poster for {{ movie.title }}" loading="lazy">{% else %}<div class="poster-placeholder">🎬</div>{% endif %}{% if movie.active_loan_id %}<span class="loan-ribbon">ON LOAN</span>{% endif %}</div>
-  <div class="movie-meta"><h3>{{ movie.title }}</h3><p>{{ movie.year or 'Year unknown' }} · {{ movie.format or 'Format unknown' }}</p>{% if movie.shelf_name %}<p>📚 {{ movie.shelf_name }}</p>{% else %}<p class="muted">📚 Unassigned</p>{% endif %}{% if movie.active_loan_id %}<p class="loan-text">Loaned to {{ movie.borrower_name }}</p>{% endif %}</div>
+  <div class="movie-meta"><h3>{{ movie.title }}</h3><p>{{ movie.year or 'Year unknown' }} · {{ movie.formats|join(' + ') if movie.formats else (movie.format or 'Format unknown') }}{% if movie.copy_count > 1 %} · {{ movie.copy_count }} copies{% endif %}</p>{% if movie.shelf_name %}<p>📚 {{ movie.shelf_name }}</p>{% else %}<p class="muted">📚 Unassigned</p>{% endif %}{% if movie.active_loan_id %}<p class="loan-text">Loaned to {{ movie.borrower_name }}</p>{% endif %}</div>
 </a>
 {% else %}<div class="empty"><h2>No movies found</h2><p>Add a movie or change the filters.</p></div>{% endfor %}
 </div>

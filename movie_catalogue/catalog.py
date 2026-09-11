@@ -10,6 +10,7 @@ from flask_login import current_user, login_required
 
 from .db import get_db
 from .permissions import require_library_role
+from .barcode_parser import rank_tmdb_results
 
 bp = Blueprint("catalog", __name__)
 
@@ -17,6 +18,57 @@ MOVIE_FIELDS = [
     "barcode", "title", "year", "format", "poster_path", "tmdb_id", "status",
     "version", "country", "language", "region", "disc_count", "notes", "shelf_id",
 ]
+
+
+
+def _group_movie_rows(rows):
+    """Group physical copies for catalogue display without merging database rows."""
+    groups = []
+    by_key = {}
+    for raw in rows:
+        movie = dict(raw)
+        key = ("tmdb", movie.get("tmdb_id")) if movie.get("tmdb_id") else ("copy", movie.get("id"))
+        group = by_key.get(key)
+        if group is None:
+            group = dict(movie)
+            group["copies"] = [movie]
+            group["copy_count"] = 1
+            group["formats"] = [movie.get("format")] if movie.get("format") else []
+            by_key[key] = group
+            groups.append(group)
+        else:
+            group["copies"].append(movie)
+            group["copy_count"] += 1
+            if movie.get("format") and movie.get("format") not in group["formats"]:
+                group["formats"].append(movie.get("format"))
+            if not group.get("poster_path") and movie.get("poster_path"):
+                group["poster_path"] = movie.get("poster_path")
+            if not group.get("active_loan_id") and movie.get("active_loan_id"):
+                group["active_loan_id"] = movie.get("active_loan_id")
+                group["borrower_name"] = movie.get("borrower_name")
+    return groups
+
+
+def _high_confidence_match(title, year, results):
+    """Return only a deliberately conservative, unambiguous TMDb match."""
+    try:
+        query_year = int(year) if year not in (None, "") else None
+    except (TypeError, ValueError):
+        query_year = None
+    ranked = rank_tmdb_results(title, query_year, results)
+    if not ranked:
+        return None
+    top = ranked[0]
+    top_score = int(top.get("match_score") or 0)
+    second_score = int(ranked[1].get("match_score") or 0) if len(ranked) > 1 else 0
+    # Exact title + exact year is extremely strong.  Without a year, require
+    # a clear score gap so remakes with the same title are never guessed.
+    if query_year is not None:
+        if top_score < 140 or (len(ranked) > 1 and top_score - second_score < 20):
+            return None
+    elif top_score < 110 or (len(ranked) > 1 and top_score - second_score < 20):
+        return None
+    return top
 
 
 def _int_or_none(value):
@@ -140,13 +192,15 @@ def library_home(library_id, library, role):
         "LEFT JOIN loans l ON l.movie_id=m.id AND l.returned_date IS NULL "
     )
     where_sql = " WHERE " + " AND ".join(where)
-    total = db.execute("SELECT COUNT(DISTINCT m.id) " + join_sql + where_sql, params).fetchone()[0]
-    offset = (page - 1) * page_size
-    movies = db.execute(
+    physical_rows = db.execute(
         "SELECT m.*, s.name AS shelf_name, l.id AS active_loan_id, l.borrower_name, l.loaned_date "
-        + join_sql + where_sql + f" ORDER BY {order_sql} LIMIT ? OFFSET ?",
-        [*params, page_size, offset],
+        + join_sql + where_sql + f" ORDER BY {order_sql}",
+        params,
     ).fetchall()
+    grouped_movies = _group_movie_rows(physical_rows)
+    total = len(grouped_movies)
+    offset = (page - 1) * page_size
+    movies = grouped_movies[offset:offset + page_size]
     shelves = db.execute("SELECT * FROM shelves WHERE library_id=? ORDER BY sort_order,name COLLATE NOCASE", (library_id,)).fetchall()
     collections = db.execute(
         "SELECT c.*, COUNT(mc.movie_id) AS movie_count FROM collections c "
@@ -298,7 +352,14 @@ def movie_detail(library_id, movie_id, library, role):
     ).fetchall()
     loans = db.execute("SELECT * FROM loans WHERE movie_id=? ORDER BY loaned_date DESC,id DESC", (movie_id,)).fetchall()
     active_loan = next((x for x in loans if not x["returned_date"]), None)
-    return render_template("movie_detail.html", library=library, role=role, movie=movie, shelf=shelf, collections=collections, loans=loans, active_loan=active_loan)
+    copies = [movie]
+    if movie["tmdb_id"]:
+        copies = db.execute(
+            "SELECT * FROM movies WHERE library_id=? AND tmdb_id=? ORDER BY id",
+            (library_id, movie["tmdb_id"]),
+        ).fetchall()
+    display_poster = movie["poster_path"] or next((copy["poster_path"] for copy in copies if copy["poster_path"]), None)
+    return render_template("movie_detail.html", library=library, role=role, movie=movie, shelf=shelf, collections=collections, loans=loans, active_loan=active_loan, copies=copies, display_poster=display_poster)
 
 
 @bp.route("/libraries/<int:library_id>/movies/<int:movie_id>/edit", methods=["GET", "POST"])
@@ -550,6 +611,67 @@ def import_csv(library_id, library, role):
             db.execute("INSERT OR IGNORE INTO movie_collections (movie_id,collection_id) VALUES (?,?)", (movie_id, cid))
         count += 1
     db.commit(); flash(f"Imported {count} movies.", "success")
+    return redirect(url_for("catalog.library_home", library_id=library_id))
+
+
+
+@bp.post("/libraries/<int:library_id>/match-repair")
+@login_required
+@require_library_role("editor")
+def match_repair_movies(library_id, library, role):
+    if not current_app.config.get("TMDB_API_KEY"):
+        flash("TMDB_API_KEY is not configured.", "warning")
+        return redirect(url_for("catalog.library_home", library_id=library_id))
+    db = get_db()
+    rows = db.execute("SELECT * FROM movies WHERE library_id=? ORDER BY id", (library_id,)).fetchall()
+    refreshed = matched = unmatched = failed = 0
+    details_cache = {}
+    search_cache = {}
+    for movie in rows:
+        try:
+            tmdb_id = movie["tmdb_id"]
+            data = None
+            if tmdb_id:
+                if tmdb_id not in details_cache:
+                    details_cache[tmdb_id] = _tmdb_details(tmdb_id)
+                data = details_cache[tmdb_id]
+                if data:
+                    refreshed += 1
+            else:
+                cache_key = (movie["title"], movie["year"])
+                if cache_key not in search_cache:
+                    raw = _tmdb_search(movie["title"], movie["year"])
+                    normalized = []
+                    for item in raw:
+                        date = item.get("release_date") or ""
+                        normalized.append({
+                            "tmdb_id": item.get("id"), "title": item.get("title") or item.get("original_title") or "",
+                            "year": int(date[:4]) if len(date) >= 4 and date[:4].isdigit() else None,
+                        })
+                    search_cache[cache_key] = _high_confidence_match(movie["title"], movie["year"], normalized)
+                choice = search_cache[cache_key]
+                if choice:
+                    tmdb_id = choice["tmdb_id"]
+                    if tmdb_id not in details_cache:
+                        details_cache[tmdb_id] = _tmdb_details(tmdb_id)
+                    data = details_cache[tmdb_id]
+                    if data:
+                        matched += 1
+                else:
+                    unmatched += 1
+                    continue
+            if not data:
+                failed += 1
+                continue
+            poster = _tmdb_poster_url(data.get("poster_path") or movie["poster_path"])
+            db.execute(
+                "UPDATE movies SET title=?,year=?,poster_path=?,tmdb_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND library_id=?",
+                (data.get("title") or movie["title"], (data.get("release_date") or "")[:4] or movie["year"], poster or movie["poster_path"], tmdb_id, movie["id"], library_id),
+            )
+        except requests.RequestException:
+            failed += 1
+    db.commit()
+    flash(f"Match / Repair complete: {matched} matched, {refreshed} refreshed, {unmatched} left unmatched, {failed} failed.", "success" if not failed else "warning")
     return redirect(url_for("catalog.library_home", library_id=library_id))
 
 

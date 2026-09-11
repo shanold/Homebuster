@@ -35,8 +35,8 @@ android {
         applicationId = "com.homebuster.mobile"
         minSdk = 24
         targetSdk = 37
-        versionCode = 13
-        versionName = "0.3.15"
+        versionCode = 14
+        versionName = "0.3.16"
     }
 
     signingConfigs {

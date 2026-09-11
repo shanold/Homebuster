@@ -20,6 +20,16 @@ def _token_hash(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+def _mobile_poster_url(poster_path):
+    if not poster_path:
+        return None
+    value = str(poster_path).strip()
+    if value.startswith("http://") or value.startswith("https://"):
+        return value
+    size = current_app.config.get("TMDB_POSTER_SIZE", "w342")
+    return f"https://image.tmdb.org/t/p/{size}{value if value.startswith('/') else '/' + value}"
+
+
 def _json_error(message: str, status: int = 400, **extra):
     return jsonify({"error": message, **extra}), status
 
@@ -369,7 +379,7 @@ def add_movie():
             title,
             str(data.get("year")) if data.get("year") is not None else None,
             str(data.get("format") or "Blu-ray"),
-            data.get("poster_path"),
+            _mobile_poster_url(data.get("poster_path")),
             data.get("tmdb_id"),
             "owned",
             str(data.get("version") or "").strip() or None,

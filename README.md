@@ -237,7 +237,7 @@ https://github.com/TheMarveled/movie-cataloguer
 Released under the MIT License. See `LICENSE`.
 
 
-## Android companion app (v0.3.15)
+## Android companion app (v0.3.16)
 
 - Android respects system status/navigation bar safe areas on modern Android.
 - Grouped movie posters collapse multiple physical formats of the same title into one library card while keeping copies separate in details.

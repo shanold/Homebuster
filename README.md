@@ -50,7 +50,7 @@ docker compose up -d --build
 Open:
 
 ```text
-http://YOUR-SERVER-IP:8080
+http://YOUR-SERVER-IP:8092
 ```
 
 After the admin account has been created successfully, remove `INITIAL_ADMIN_PASSWORD` from `.env` (or leave it blank) and restart the container. Existing accounts are not overwritten by the bootstrap variables.

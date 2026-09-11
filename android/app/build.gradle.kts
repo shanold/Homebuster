@@ -11,11 +11,11 @@ android {
         applicationId = "com.homebuster.mobile"
         minSdk = 24
         targetSdk = 37
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = 6
+        versionName = "0.3.4"
     }
 
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

@@ -66,12 +66,16 @@ def create_app(test_config=None) -> Flask:
             return redirect(url_for("libraries.index"))
         return redirect(url_for("auth.login"))
 
+    @app.context_processor
+    def inject_app_metadata():
+        return {"app_version": app.config.get("APP_VERSION", "0.3.4")}
+
     @app.get("/healthz")
     def healthz():
-        return {"status": "ok", "app": app.config.get("APP_NAME", "Homebuster"), "version": app.config.get("APP_VERSION", "0.3.0")}
+        return {"status": "ok", "app": app.config.get("APP_NAME", "Homebuster"), "version": app.config.get("APP_VERSION", "0.3.4")}
 
     with app.app_context():
         db.initialize_database()
-        app.logger.info("Homebuster %s ready; database=%s", app.config.get("APP_VERSION", "0.3.0"), app.config["DATABASE_PATH"])
+        app.logger.info("Homebuster %s ready; database=%s", app.config.get("APP_VERSION", "0.3.4"), app.config["DATABASE_PATH"])
 
     return app

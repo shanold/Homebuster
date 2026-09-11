@@ -110,6 +110,16 @@ def health():
     return jsonify({"name": "Homebuster", "api_version": "v1", "status": "ok"})
 
 
+@bp.get("/status")
+def status():
+    return jsonify({
+        "name": current_app.config.get("APP_NAME", "Homebuster"),
+        "server_version": current_app.config.get("APP_VERSION", "0.3.4"),
+        "api_version": "v1",
+        "status": "ok",
+    })
+
+
 @bp.post("/auth/login")
 def login():
     data = request.get_json(silent=True) or {}

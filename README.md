@@ -237,7 +237,7 @@ https://github.com/TheMarveled/movie-cataloguer
 Released under the MIT License. See `LICENSE`.
 
 
-## Android companion app (v0.3)
+## Android companion app (v0.3.4)
 
 The existing Homebuster web interface remains the primary browser interface. The `android/` directory contains a companion Android client that connects to the same Flask server and SQLite database through `/api/v1`.
 

@@ -9,6 +9,7 @@ import retrofit2.http.*
 data class LoginRequest(val username: String, val password: String, @SerializedName("device_name") val deviceName: String = "Homebuster Android")
 data class User(val id: Int, val username: String, @SerializedName("is_admin") val isAdmin: Boolean)
 data class LoginResponse(val token: String, val user: User)
+data class ServerStatus(@SerializedName("server_version") val serverVersion: String, @SerializedName("api_version") val apiVersion: String, val status: String)
 data class Movie(
     val id: Int, @SerializedName("library_id") val libraryId: Int, @SerializedName("shelf_id") val shelfId: Int?,
     @SerializedName("tmdb_id") val tmdbId: Int?, val title: String, val year: Int?, val overview: String,
@@ -29,6 +30,7 @@ data class BarcodeResponse(val status: String, val upc: String?, val movie: Movi
 data class AddMovieRequest(@SerializedName("tmdb_id") val tmdbId: Int?, val title: String, val year: Int?, val overview: String?, @SerializedName("poster_path") val posterPath: String?, val format: String, val upc: String?)
 
 interface HomebusterApi {
+    @GET("api/v1/status") suspend fun status(): ServerStatus
     @POST("api/v1/auth/login") suspend fun login(@Body body: LoginRequest): LoginResponse
     @GET("api/v1/movies") suspend fun movies(@Header("Authorization") auth: String, @Query("q") query: String? = null): MoviesResponse
     @GET("api/v1/movies/{id}") suspend fun movie(@Header("Authorization") auth: String, @Path("id") id: Int): Map<String, Movie>

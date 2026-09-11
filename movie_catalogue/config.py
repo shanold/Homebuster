@@ -17,7 +17,7 @@ def default_database_path() -> str:
 
 class Config:
     APP_NAME = "Homebuster"
-    APP_VERSION = "0.3.7"
+    APP_VERSION = "0.3.8"
     DATABASE_PATH = default_database_path()
     SECRET_KEY = os.getenv("SECRET_KEY", "")
     ALLOW_REGISTRATION = env_bool("ALLOW_REGISTRATION", False)

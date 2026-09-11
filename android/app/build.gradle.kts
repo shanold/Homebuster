@@ -11,8 +11,8 @@ android {
         applicationId = "com.homebuster.mobile"
         minSdk = 24
         targetSdk = 37
-        versionCode = 9
-        versionName = "0.3.11"
+        versionCode = 10
+        versionName = "0.3.12"
     }
 
     buildFeatures { compose = true; buildConfig = true }

@@ -17,12 +17,18 @@ checks={
 'scanner themed':'HomebusterScreenHeader("Scan barcode"' in scan and 'HomebusterErrorCard' in scan,
 'barcode lookup model':'data class BarcodeLookup' in api and 'val lookup: BarcodeLookup?' in api,
 'barcode raw display':'r.product?.productTitle' in main,
-'barcode cleaned display':'Searching TMDb for:' in main and 'r.lookup?.let' in main,
-'version 0.3.7':'versionName = "0.3.7"' in (root/'app/build.gradle.kts').read_text(),
+'barcode cleaned display':'TMDb search:' in main and 'r.lookup?.let' in main,
+'version 0.3.12':'versionName = "0.3.12"' in (root/'app/build.gradle.kts').read_text(),
 'system bars':'systemBarsPadding()' in main,
 'grouped copies':'data class MovieGroup' in main and 'formatsSummary' in main and 'Physical copies' in main,
-'edition display':'it.edition' in main and 'it.format' in main,
+'edition display':'lookup.edition' in main and 'lookup.format' in main,
 }
+checks.update({
+'barcode metadata fields': all(x in api for x in ['val language: String?', 'val region: String?', 'val discCount: Int?', 'val distributor: String?']),
+'barcode best match': 'val bestMatch: TmdbResult?' in api and 'Best match' in main,
+'barcode add workflow': 'Add this copy' in main and 'api.addMovie(' in main,
+'barcode distributor transparency': 'Catalog/distributor removed from search:' in main,
+})
 failed=[k for k,v in checks.items() if not v]
 for k,v in checks.items(): print(('PASS' if v else 'FAIL'), k)
 if failed: raise SystemExit('failed: '+', '.join(failed))

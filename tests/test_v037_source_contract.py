@@ -15,8 +15,10 @@ def test_v037_brand_and_mobile_contracts():
     assert "val version: String?" in api
     assert "val edition: String?" in api
 
-def test_server_version_is_037():
+def test_server_and_android_versions_match():
+    import re
     config = (ROOT / "movie_catalogue/config.py").read_text()
     gradle = (ROOT / "android/app/build.gradle.kts").read_text()
-    assert 'APP_VERSION = "0.3.7"' in config
-    assert 'versionName = "0.3.7"' in gradle
+    server = re.search(r'APP_VERSION\s*=\s*"([^"]+)"', config).group(1)
+    android = re.search(r'versionName\s*=\s*"([^"]+)"', gradle).group(1)
+    assert server == android

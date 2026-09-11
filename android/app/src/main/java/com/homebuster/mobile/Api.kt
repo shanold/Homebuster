@@ -14,7 +14,8 @@ data class Movie(
     val id: Int, @SerializedName("library_id") val libraryId: Int, @SerializedName("shelf_id") val shelfId: Int?,
     @SerializedName("tmdb_id") val tmdbId: Int?, val title: String, val year: Int?, val overview: String,
     @SerializedName("poster_path") val posterPath: String?, val runtime: Int?, val format: String,
-    val upc: String?, val watched: Boolean, val version: String? = null
+    val upc: String?, val watched: Boolean, val version: String? = null,
+    val language: String? = null, val region: String? = null, @SerializedName("disc_count") val discCount: Int? = null
 ) {
     val posterUrl: String? get() = posterPath?.let { "https://image.tmdb.org/t/p/w500$it" }
 }
@@ -23,19 +24,34 @@ data class CollectionItem(val id: Int, @SerializedName("library_id") val library
 data class CollectionsResponse(val collections: List<CollectionItem>)
 data class Loan(val id: Int, @SerializedName("movie_id") val movieId: Int, val title: String, val borrower: String, @SerializedName("loaned_at") val loanedAt: String, @SerializedName("returned_at") val returnedAt: String?, val notes: String)
 data class LoansResponse(val loans: List<Loan>)
-data class TmdbResult(@SerializedName("tmdb_id") val tmdbId: Int, val title: String, val year: Int?, val overview: String, @SerializedName("poster_path") val posterPath: String?)
+data class TmdbResult(
+    @SerializedName("tmdb_id") val tmdbId: Int, val title: String, val year: Int?, val overview: String,
+    @SerializedName("poster_path") val posterPath: String?, @SerializedName("match_score") val matchScore: Int? = null
+)
 data class TmdbResponse(val results: List<TmdbResult>)
 data class BarcodeProduct(@SerializedName("product_title") val productTitle: String?, @SerializedName("search_title") val searchTitle: String?)
-data class BarcodeLookup(val title: String, val year: Int?, val format: String? = null, val edition: String? = null)
+data class BarcodeSearchAttempt(val title: String, val year: Int?, val results: Int, @SerializedName("best_score") val bestScore: Int)
+data class BarcodeLookup(
+    val title: String, @SerializedName("fallback_title") val fallbackTitle: String? = null, val year: Int?,
+    val formats: List<String> = emptyList(), val format: String? = null, val edition: String? = null,
+    val language: String? = null, val region: String? = null, @SerializedName("disc_count") val discCount: Int? = null,
+    val distributor: String? = null, val attempts: List<BarcodeSearchAttempt> = emptyList()
+)
 data class BarcodeResponse(
     val status: String,
     val upc: String?,
     val movie: Movie?,
     val product: BarcodeProduct?,
     val lookup: BarcodeLookup?,
-    @SerializedName("tmdb_results") val tmdbResults: List<TmdbResult>?
+    @SerializedName("best_match") val bestMatch: TmdbResult? = null,
+    @SerializedName("tmdb_results") val tmdbResults: List<TmdbResult>? = null
 )
-data class AddMovieRequest(@SerializedName("tmdb_id") val tmdbId: Int?, val title: String, val year: Int?, val overview: String?, @SerializedName("poster_path") val posterPath: String?, val format: String, val upc: String?, val version: String? = null)
+data class AddMovieRequest(
+    @SerializedName("tmdb_id") val tmdbId: Int?, val title: String, val year: Int?, val overview: String?,
+    @SerializedName("poster_path") val posterPath: String?, val format: String, val upc: String?,
+    val version: String? = null, val language: String? = null, val region: String? = null,
+    @SerializedName("disc_count") val discCount: Int? = null
+)
 
 interface HomebusterApi {
     @GET("api/v1/status") suspend fun status(): ServerStatus

@@ -68,14 +68,14 @@ def create_app(test_config=None) -> Flask:
 
     @app.context_processor
     def inject_app_metadata():
-        return {"app_version": app.config.get("APP_VERSION", "0.3.7")}
+        return {"app_version": app.config.get("APP_VERSION", "0.3.12")}
 
     @app.get("/healthz")
     def healthz():
-        return {"status": "ok", "app": app.config.get("APP_NAME", "Homebuster"), "version": app.config.get("APP_VERSION", "0.3.7")}
+        return {"status": "ok", "app": app.config.get("APP_NAME", "Homebuster"), "version": app.config.get("APP_VERSION", "0.3.12")}
 
     with app.app_context():
         db.initialize_database()
-        app.logger.info("Homebuster %s ready; database=%s", app.config.get("APP_VERSION", "0.3.7"), app.config["DATABASE_PATH"])
+        app.logger.info("Homebuster %s ready; database=%s", app.config.get("APP_VERSION", "0.3.12"), app.config["DATABASE_PATH"])
 
     return app

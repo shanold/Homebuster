@@ -260,6 +260,9 @@ private fun MovieDetailScreen(group: MovieGroup, onBack: () -> Unit) {
                         HomebusterMetaChip(copy.format.ifBlank { "Unknown" })
                         copy.version?.takeIf { it.isNotBlank() }?.let { HomebusterMetaChip(it, HbAccent) }
                     }
+                    copy.language?.takeIf { it.isNotBlank() }?.let { Text("Language: $it", color = HbMuted, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp)) }
+                    copy.region?.takeIf { it.isNotBlank() }?.let { Text("Region: $it", color = HbMuted, style = MaterialTheme.typography.bodySmall) }
+                    copy.discCount?.let { Text("Discs: $it", color = HbMuted, style = MaterialTheme.typography.bodySmall) }
                     copy.upc?.let { Text("UPC: $it", color = HbMuted, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp)) }
                 }
             }
@@ -306,45 +309,139 @@ private fun LoansScreen(api: HomebusterApi, token: String, onBack: () -> Unit) {
 private fun BarcodeResultScreen(api: HomebusterApi, token: String, upc: String, onLoaded: (BarcodeResponse) -> Unit, onBack: () -> Unit) {
     var result by remember(upc) { mutableStateOf<BarcodeResponse?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    var addError by remember { mutableStateOf<String?>(null) }
+    var addingTmdbId by remember { mutableStateOf<Int?>(null) }
+    var addedMovie by remember { mutableStateOf<Movie?>(null) }
+    val scope = rememberCoroutineScope()
+
     LaunchedEffect(upc) {
         try { result = api.barcode("Bearer $token", upc); onLoaded(result!!) }
         catch (e: HttpException) { error = if (e.code() == 404) "Barcode $upc is not in your library and the server could not identify it." else friendly(e) }
         catch (e: Exception) { error = friendly(e) }
     }
+
     LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { HomebusterScreenHeader("Barcode lookup", onBack) }
         item { Text("UPC $upc", color = HbMuted, style = MaterialTheme.typography.bodySmall) }
+
+        addedMovie?.let { movie ->
+            item {
+                HomebusterPanel {
+                    Text("Added to Homebuster", color = HbGood, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(4.dp))
+                    Text(movie.title, style = MaterialTheme.typography.titleLarge)
+                    Text(listOfNotNull(movie.format, movie.version).joinToString(" • "), color = HbMuted)
+                    Spacer(Modifier.height(10.dp))
+                    Button(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("Back to library") }
+                }
+            }
+        }
+        addError?.let { item { HomebusterErrorCard(it) } }
+
         when (val r = result) {
             null -> item { if (error != null) HomebusterErrorCard(error!!) else HomebusterPanel { Text("Looking up barcode…", color = HbMuted) } }
             else -> if (r.status == "owned" && r.movie != null) {
-                item { HomebusterPanel { Text("You already own this.", color = HbGood, fontWeight = FontWeight.Bold); Spacer(Modifier.height(4.dp)); Text(r.movie.title, style = MaterialTheme.typography.titleLarge); Text(r.movie.format, color = HbMuted) } }
+                item {
+                    HomebusterPanel {
+                        Text("You already own this.", color = HbGood, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(4.dp))
+                        Text(r.movie.title, style = MaterialTheme.typography.titleLarge)
+                        Text(listOfNotNull(r.movie.format, r.movie.version).joinToString(" • "), color = HbMuted)
+                    }
+                }
             } else {
                 item {
                     HomebusterPanel {
+                        Text("Scanned product", color = HbMuted, style = MaterialTheme.typography.bodySmall)
                         Text(r.product?.productTitle ?: "Product found", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                        r.lookup?.let {
-                            Spacer(Modifier.height(8.dp))
-                            Text("Searching TMDb for:", color = HbMuted, style = MaterialTheme.typography.bodySmall)
-                            Text(it.title + (it.year?.let { y -> " ($y)" } ?: ""), color = HbAccent)
-                            if (!it.format.isNullOrBlank() || !it.edition.isNullOrBlank()) {
-                                Spacer(Modifier.height(8.dp))
-                                Text("Detected from barcode:", color = HbMuted, style = MaterialTheme.typography.bodySmall)
-                                Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                                    it.format?.takeIf { value -> value.isNotBlank() }?.let { value -> HomebusterMetaChip(value) }
-                                    it.edition?.takeIf { value -> value.isNotBlank() }?.let { value -> HomebusterMetaChip(value, HbAccent) }
-                                }
+
+                        r.lookup?.let { lookup ->
+                            Spacer(Modifier.height(12.dp))
+                            Text("Homebuster detected", color = HbAccent, fontWeight = FontWeight.Bold)
+                            Text("Movie: ${lookup.title}")
+                            lookup.year?.let { Text("Year: $it") }
+                            lookup.format?.takeIf { it.isNotBlank() }?.let { Text("Format: $it") }
+                            lookup.language?.takeIf { it.isNotBlank() }?.let { Text("Language: $it") }
+                            lookup.edition?.takeIf { it.isNotBlank() }?.let { Text("Version / Edition: $it") }
+                            lookup.region?.takeIf { it.isNotBlank() }?.let { Text("Region: $it") }
+                            lookup.discCount?.let { Text("Disc count: $it") }
+                            lookup.distributor?.takeIf { it.isNotBlank() }?.let {
+                                Spacer(Modifier.height(6.dp))
+                                Text("Catalog/distributor removed from search: $it", color = HbMuted, style = MaterialTheme.typography.bodySmall)
+                            }
+                            Spacer(Modifier.height(10.dp))
+                            Text("TMDb search: ${lookup.title}${lookup.year?.let { " ($it)" } ?: ""}", color = HbAccent)
+                            if (lookup.attempts.size > 1) {
+                                Text("Homebuster tried ${lookup.attempts.size} search variations.", color = HbMuted, style = MaterialTheme.typography.bodySmall)
                             }
                         }
+
                         Spacer(Modifier.height(8.dp))
                         val count = r.tmdbResults?.size ?: 0
                         Text(if (count == 0) "No TMDb matches found" else "$count TMDb matches", color = if (count == 0) HbWarning else HbGood)
                     }
                 }
-                items(r.tmdbResults.orEmpty()) { match ->
+
+                items(r.tmdbResults.orEmpty(), key = { it.tmdbId }) { match ->
+                    val isBest = r.bestMatch?.tmdbId == match.tmdbId || r.tmdbResults?.firstOrNull()?.tmdbId == match.tmdbId
                     HomebusterPanel {
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            match.posterPath?.let { AsyncImage(model = "https://image.tmdb.org/t/p/w185$it", contentDescription = match.title, modifier = Modifier.width(74.dp).aspectRatio(2f / 3f), contentScale = ContentScale.Crop) }
-                            Column { Text(match.title, fontWeight = FontWeight.Bold); match.year?.let { Text(it.toString(), color = HbMuted) }; if (match.overview.isNotBlank()) Text(match.overview, color = HbMuted, style = MaterialTheme.typography.bodySmall, maxLines = 4) }
+                            match.posterPath?.let {
+                                AsyncImage(
+                                    model = "https://image.tmdb.org/t/p/w185$it",
+                                    contentDescription = match.title,
+                                    modifier = Modifier.width(74.dp).aspectRatio(2f / 3f),
+                                    contentScale = ContentScale.Crop
+                                )
+                            }
+                            Column(Modifier.weight(1f)) {
+                                if (isBest) {
+                                    HomebusterMetaChip("Best match", HbGood)
+                                    Spacer(Modifier.height(6.dp))
+                                }
+                                Text(match.title, fontWeight = FontWeight.Bold)
+                                match.year?.let { Text(it.toString(), color = HbMuted) }
+                                if (match.overview.isNotBlank()) {
+                                    Text(match.overview, color = HbMuted, style = MaterialTheme.typography.bodySmall, maxLines = 4)
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        Button(
+                            enabled = addedMovie == null && addingTmdbId == null,
+                            onClick = {
+                                addError = null
+                                addingTmdbId = match.tmdbId
+                                scope.launch {
+                                    try {
+                                        val lookup = r.lookup
+                                        val response = api.addMovie(
+                                            "Bearer $token",
+                                            AddMovieRequest(
+                                                tmdbId = match.tmdbId,
+                                                title = match.title,
+                                                year = match.year,
+                                                overview = match.overview,
+                                                posterPath = match.posterPath,
+                                                format = lookup?.format?.takeIf { it.isNotBlank() } ?: "Unknown",
+                                                upc = r.upc ?: upc,
+                                                version = lookup?.edition,
+                                                language = lookup?.language,
+                                                region = lookup?.region,
+                                                discCount = lookup?.discCount
+                                            )
+                                        )
+                                        addedMovie = response["movie"]
+                                    } catch (e: Exception) {
+                                        addError = friendly(e)
+                                    } finally {
+                                        addingTmdbId = null
+                                    }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(if (addingTmdbId == match.tmdbId) "Adding…" else "Add this copy")
                         }
                     }
                 }
@@ -352,3 +449,4 @@ private fun BarcodeResultScreen(api: HomebusterApi, token: String, upc: String, 
         }
     }
 }
+

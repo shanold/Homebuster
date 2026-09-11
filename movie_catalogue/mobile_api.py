@@ -9,6 +9,7 @@ from werkzeug.security import check_password_hash
 
 from .db import get_db
 from .integrations import barcode_product_lookup, tmdb_search
+from .barcode_parser import best_match_score, rank_tmdb_results
 
 bp = Blueprint("mobile_api", __name__, url_prefix="/api/v1")
 
@@ -114,7 +115,7 @@ def health():
 def status():
     return jsonify({
         "name": current_app.config.get("APP_NAME", "Homebuster"),
-        "server_version": current_app.config.get("APP_VERSION", "0.3.7"),
+        "server_version": current_app.config.get("APP_VERSION", "0.3.12"),
         "api_version": "v1",
         "status": "ok",
     })
@@ -345,11 +346,22 @@ def add_movie():
         return _json_error("Library is not editable", 403)
 
     barcode = str(data.get("upc") or "").strip() or None
+    disc_count = data.get("disc_count")
+    if disc_count in (None, ""):
+        disc_count = None
+    else:
+        try:
+            disc_count = int(disc_count)
+        except (TypeError, ValueError):
+            return _json_error("disc_count must be a whole number")
+        if disc_count < 1 or disc_count > 99:
+            return _json_error("disc_count must be between 1 and 99")
+
     cur = db.execute(
         """
         INSERT INTO movies(
-            library_id,barcode,title,year,format,poster_path,tmdb_id,status,version,notes
-        ) VALUES (?,?,?,?,?,?,?,?,?,?)
+            library_id,barcode,title,year,format,poster_path,tmdb_id,status,version,language,region,disc_count,notes
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
         (
             library_id,
@@ -361,6 +373,9 @@ def add_movie():
             data.get("tmdb_id"),
             "owned",
             str(data.get("version") or "").strip() or None,
+            str(data.get("language") or "").strip() or None,
+            str(data.get("region") or "").strip() or None,
+            disc_count,
             None,
         ),
     )
@@ -416,6 +431,49 @@ def tmdb_lookup():
         return _json_error("TMDb lookup failed", 502)
 
 
+def _barcode_tmdb_matches(product: dict) -> tuple[list[dict], list[dict]]:
+    """Run progressively broader TMDb searches and keep the best candidates."""
+    title = str(product.get("search_title") or product.get("product_title") or "").strip()
+    fallback = str(product.get("fallback_title") or "").strip()
+    year = product.get("search_year")
+
+    queries: list[tuple[str, int | None]] = []
+    for candidate in ((title, year), (title, None), (fallback, year), (fallback, None)):
+        if not candidate[0]:
+            continue
+        key = (candidate[0].casefold(), candidate[1])
+        if any((q.casefold(), y) == key for q, y in queries):
+            continue
+        queries.append(candidate)
+
+    merged: dict[object, dict] = {}
+    attempts: list[dict] = []
+    for query_title, query_year in queries:
+        raw = tmdb_search(query_title, query_year)
+        ranked = rank_tmdb_results(query_title, query_year, raw)
+        attempts.append({
+            "title": query_title,
+            "year": query_year,
+            "results": len(ranked),
+            "best_score": best_match_score(ranked),
+        })
+        for item in ranked:
+            key = item.get("tmdb_id") or (item.get("title"), item.get("year"))
+            current = merged.get(key)
+            if current is None or int(item.get("match_score") or 0) > int(current.get("match_score") or 0):
+                merged[key] = item
+        # Exact/near-exact title matches score over this threshold.  Once one
+        # exists, broader searches add noise and extra TMDb requests.
+        if best_match_score(merged.values()) >= 105:
+            break
+
+    results = sorted(
+        merged.values(),
+        key=lambda item: (-int(item.get("match_score") or 0), str(item.get("title") or "").lower()),
+    )
+    return results[:20], attempts
+
+
 @bp.get("/barcodes/<upc>")
 @token_required
 def barcode_lookup(upc):
@@ -442,16 +500,27 @@ def barcode_lookup(upc):
     search_title = (product.get("search_title") or product.get("product_title") or "").strip()
     search_year = product.get("search_year")
     try:
-        matches = tmdb_search(search_title, search_year)
-        if not matches and search_year is not None:
-            matches = tmdb_search(search_title)
+        matches, attempts = _barcode_tmdb_matches(product)
     except Exception as exc:
         current_app.logger.warning("TMDb barcode match lookup failed: %s", exc)
-        matches = []
+        matches, attempts = [], []
     return jsonify({
         "status": "product_match",
         "upc": upc,
         "product": product,
-        "lookup": {"title": search_title, "year": search_year, "format": product.get("detected_format"), "edition": product.get("detected_edition")},
+        "lookup": {
+            "title": search_title,
+            "fallback_title": product.get("fallback_title"),
+            "year": search_year,
+            "formats": product.get("detected_formats") or [],
+            "format": product.get("detected_format"),
+            "edition": product.get("detected_edition"),
+            "language": product.get("detected_language"),
+            "region": product.get("detected_region"),
+            "disc_count": product.get("detected_disc_count"),
+            "distributor": product.get("detected_distributor"),
+            "attempts": attempts,
+        },
+        "best_match": matches[0] if matches else None,
         "tmdb_results": matches,
     })

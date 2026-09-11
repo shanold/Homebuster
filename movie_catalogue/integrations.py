@@ -96,5 +96,6 @@ def barcode_product_lookup(upc: str):
         "detected_region": parsed.region,
         "detected_disc_count": parsed.disc_count,
         "detected_distributor": parsed.distributor,
+        "detected_category": parsed.category,
         "brand": brand,
     }

@@ -35,7 +35,7 @@ data class BarcodeLookup(
     val title: String, @SerializedName("fallback_title") val fallbackTitle: String? = null, val year: Int?,
     val formats: List<String> = emptyList(), val format: String? = null, val edition: String? = null,
     val language: String? = null, val region: String? = null, @SerializedName("disc_count") val discCount: Int? = null,
-    val distributor: String? = null, val attempts: List<BarcodeSearchAttempt> = emptyList()
+    val distributor: String? = null, val category: String? = null, val attempts: List<BarcodeSearchAttempt> = emptyList()
 )
 data class BarcodeResponse(
     val status: String,
@@ -44,7 +44,9 @@ data class BarcodeResponse(
     val product: BarcodeProduct?,
     val lookup: BarcodeLookup?,
     @SerializedName("best_match") val bestMatch: TmdbResult? = null,
-    @SerializedName("tmdb_results") val tmdbResults: List<TmdbResult>? = null
+    @SerializedName("tmdb_results") val tmdbResults: List<TmdbResult>? = null,
+    @SerializedName("provider_status") val providerStatus: String? = null,
+    val message: String? = null
 )
 data class AddMovieRequest(
     @SerializedName("tmdb_id") val tmdbId: Int?, val title: String, val year: Int?, val overview: String?,

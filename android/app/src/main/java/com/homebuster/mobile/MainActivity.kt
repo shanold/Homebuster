@@ -344,7 +344,26 @@ private fun BarcodeResultScreen(api: HomebusterApi, token: String, upc: String, 
 
         when (val r = result) {
             null -> item { if (error != null) HomebusterErrorCard(error!!) else HomebusterPanel { Text("Looking up barcode…", color = HbMuted) } }
-            else -> if (r.status == "owned" && r.movie != null) {
+            else -> if (r.status == "provider_not_found") {
+                item {
+                    HomebusterPanel {
+                        Text("Local library", color = HbAccent, fontWeight = FontWeight.Bold)
+                        Text("Not currently in your library", color = HbMuted)
+                        Spacer(Modifier.height(12.dp))
+                        Text("UPCitemdb", color = HbAccent, fontWeight = FontWeight.Bold)
+                        Text(
+                            r.message ?: "UPCitemdb did not find a product for this barcode",
+                            color = HbWarning,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Homebuster can't search TMDb automatically because UPCitemdb didn't provide a movie title.",
+                            color = HbMuted
+                        )
+                    }
+                }
+            } else if (r.status == "owned" && r.movie != null) {
                 item {
                     HomebusterPanel {
                         Text("You already own this.", color = HbGood, fontWeight = FontWeight.Bold)
@@ -372,6 +391,9 @@ private fun BarcodeResultScreen(api: HomebusterApi, token: String, upc: String, 
                             lookup.distributor?.takeIf { it.isNotBlank() }?.let {
                                 Spacer(Modifier.height(6.dp))
                                 Text("Catalog/distributor removed from search: $it", color = HbMuted, style = MaterialTheme.typography.bodySmall)
+                            }
+                            lookup.category?.takeIf { it.isNotBlank() }?.let {
+                                Text("Category removed from search: $it", color = HbMuted, style = MaterialTheme.typography.bodySmall)
                             }
                             Spacer(Modifier.height(10.dp))
                             Text("TMDb search: ${lookup.title}${lookup.year?.let { " ($it)" } ?: ""}", color = HbAccent)

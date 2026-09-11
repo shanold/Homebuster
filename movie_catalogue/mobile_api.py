@@ -496,7 +496,16 @@ def barcode_lookup(upc):
         current_app.logger.warning("Barcode lookup failed: %s", exc)
         return _json_error("Barcode provider failed", 502, provider_status="provider_error")
     if not product:
-        return jsonify({"status": "not_found", "upc": upc}), 404
+        return jsonify({
+            "status": "provider_not_found",
+            "upc": upc,
+            "provider_status": "not_found",
+            "message": "UPCitemdb did not find a product for this barcode",
+            "product": None,
+            "lookup": None,
+            "best_match": None,
+            "tmdb_results": [],
+        })
     search_title = (product.get("search_title") or product.get("product_title") or "").strip()
     search_year = product.get("search_year")
     try:
@@ -519,6 +528,7 @@ def barcode_lookup(upc):
             "region": product.get("detected_region"),
             "disc_count": product.get("detected_disc_count"),
             "distributor": product.get("detected_distributor"),
+            "category": product.get("detected_category"),
             "attempts": attempts,
         },
         "best_match": matches[0] if matches else None,

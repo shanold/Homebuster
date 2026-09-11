@@ -78,8 +78,32 @@ _LANGUAGE_LABELED_PATTERN = re.compile(
     re.I,
 )
 
+_CATALOG_CATEGORIES = (
+    "Action & Adventure",
+    "Action and Adventure",
+    "Science Fiction & Fantasy",
+    "Sci-Fi & Fantasy",
+    "Kids & Family",
+    "Mystery & Thriller",
+    "Music & Musicals",
+    "Anime & Animation",
+    "Animation",
+    "Comedy",
+    "Drama",
+    "Horror",
+    "Documentary",
+    "Romance",
+    "Western",
+    "Sports",
+)
+_CATALOG_CATEGORY_PATTERN = re.compile(
+    r"(?:" + "|".join(re.escape(value) for value in sorted(_CATALOG_CATEGORIES, key=len, reverse=True)) + r")",
+    re.I,
+)
+
 _KNOWN_DISTRIBUTORS = (
     "Sony Pictures Home Entertainment",
+    "Sony Pictures",
     "Warner Bros. Home Entertainment",
     "Warner Bros Home Entertainment",
     "Warner Home Video",
@@ -110,6 +134,7 @@ class BarcodeParseResult:
     region: str | None = None
     disc_count: int | None = None
     distributor: str | None = None
+    category: str | None = None
 
     @property
     def format(self) -> str | None:
@@ -128,6 +153,7 @@ class BarcodeParseResult:
             "region": self.region,
             "disc_count": self.disc_count,
             "distributor": self.distributor,
+            "category": self.category,
         }
 
 
@@ -362,6 +388,7 @@ def parse_barcode_product_title(raw_title: str, distributor_hint: str | None = N
     editions: list[str] = []
     state: dict = {"year": None, "region": None, "disc_count": None}
     distributor: str | None = None
+    category: str | None = None
 
     value = _strip_bracketed_metadata(value, formats, languages, editions, state)
 
@@ -415,6 +442,12 @@ def parse_barcode_product_title(raw_title: str, distributor_hint: str | None = N
             value = _strip_outer_separators(value[:packaging_match.start()])
             continue
 
+        category_match = _suffix_match(value, _CATALOG_CATEGORY_PATTERN)
+        if category_match:
+            category = category or _normalize_spaces(category_match.group(0))
+            value = _strip_outer_separators(value[:category_match.start()])
+            continue
+
         stripped, found_distributor = _strip_known_distributor_suffix(value, distributor_hint)
         if found_distributor:
             distributor = distributor or found_distributor
@@ -463,6 +496,7 @@ def parse_barcode_product_title(raw_title: str, distributor_hint: str | None = N
         languages = []
         editions = []
         distributor = None
+        category = None
         state = {"year": None, "region": None, "disc_count": None}
 
     if formats:
@@ -480,6 +514,7 @@ def parse_barcode_product_title(raw_title: str, distributor_hint: str | None = N
         region=state["region"],
         disc_count=state["disc_count"],
         distributor=distributor,
+        category=category,
     )
 
 

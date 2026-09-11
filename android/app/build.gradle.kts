@@ -1,3 +1,27 @@
+import java.util.Properties
+
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties().apply {
+    if (keystorePropertiesFile.exists()) {
+        keystorePropertiesFile.inputStream().use { load(it) }
+    }
+}
+val releaseTaskRequested = gradle.startParameter.taskNames.any {
+    it.contains("release", ignoreCase = true)
+}
+val requiredSigningKeys = listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
+val missingSigningKeys = requiredSigningKeys.filter {
+    keystoreProperties.getProperty(it).isNullOrBlank()
+}
+if (releaseTaskRequested && (!keystorePropertiesFile.exists() || missingSigningKeys.isNotEmpty())) {
+    throw GradleException(
+        "Homebuster release signing is not configured. " +
+        "Copy android/keystore.properties.example to android/keystore.properties, " +
+        "fill in the external keystore path and passwords, then rebuild. " +
+        "See android/RELEASE_SIGNING.md."
+    )
+}
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
@@ -11,8 +35,28 @@ android {
         applicationId = "com.homebuster.mobile"
         minSdk = 24
         targetSdk = 37
-        versionCode = 12
-        versionName = "0.3.14"
+        versionCode = 13
+        versionName = "0.3.15"
+    }
+
+    signingConfigs {
+        if (keystorePropertiesFile.exists() && missingSigningKeys.isEmpty()) {
+            create("release") {
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
+    buildTypes {
+        getByName("release") {
+            if (signingConfigs.names.contains("release")) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+            isMinifyEnabled = false
+        }
     }
 
     buildFeatures { compose = true; buildConfig = true }

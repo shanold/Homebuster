@@ -237,7 +237,7 @@ https://github.com/TheMarveled/movie-cataloguer
 Released under the MIT License. See `LICENSE`.
 
 
-## Android companion app (v0.3.12)
+## Android companion app (v0.3.15)
 
 - Android respects system status/navigation bar safe areas on modern Android.
 - Grouped movie posters collapse multiple physical formats of the same title into one library card while keeping copies separate in details.
@@ -250,4 +250,12 @@ The existing Homebuster web interface remains the primary browser interface. The
 
 Third-party service credentials stay on the server. The Android APK stores only the Homebuster server URL and its revocable login token. Configure TMDb and optional barcode lookup keys in the server `.env`; never put them in the Android project.
 
-Build the Android debug APK from `android/` with Android Studio or `./gradlew assembleDebug`.
+For quick development, build a debug APK with Android Studio or `./gradlew assembleDebug`.
+
+For normal phone installs, use a consistently signed release APK. One-time setup and build instructions are in:
+
+```text
+android/RELEASE_SIGNING.md
+```
+
+After the signing key is configured, build with `./gradlew assembleRelease`.

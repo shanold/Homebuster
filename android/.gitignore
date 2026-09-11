@@ -1,0 +1,10 @@
+# Android/Gradle local files
+.gradle/
+build/
+app/build/
+local.properties
+
+# Homebuster release signing secrets
+keystore.properties
+*.jks
+*.keystore

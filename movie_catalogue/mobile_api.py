@@ -114,7 +114,7 @@ def health():
 def status():
     return jsonify({
         "name": current_app.config.get("APP_NAME", "Homebuster"),
-        "server_version": current_app.config.get("APP_VERSION", "0.3.4"),
+        "server_version": current_app.config.get("APP_VERSION", "0.3.6"),
         "api_version": "v1",
         "status": "ok",
     })
@@ -438,8 +438,12 @@ def barcode_lookup(upc):
         return _json_error("Barcode provider failed", 502, provider_status="provider_error")
     if not product:
         return jsonify({"status": "not_found", "upc": upc}), 404
+    search_title = (product.get("search_title") or product.get("product_title") or "").strip()
+    search_year = product.get("search_year")
     try:
-        matches = tmdb_search(product["search_title"])
+        matches = tmdb_search(search_title, search_year)
+        if not matches and search_year is not None:
+            matches = tmdb_search(search_title)
     except Exception as exc:
         current_app.logger.warning("TMDb barcode match lookup failed: %s", exc)
         matches = []
@@ -447,5 +451,6 @@ def barcode_lookup(upc):
         "status": "product_match",
         "upc": upc,
         "product": product,
+        "lookup": {"title": search_title, "year": search_year},
         "tmdb_results": matches,
     })

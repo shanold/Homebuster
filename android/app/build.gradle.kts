@@ -11,8 +11,8 @@ android {
         applicationId = "com.homebuster.mobile"
         minSdk = 24
         targetSdk = 37
-        versionCode = 6
-        versionName = "0.3.4"
+        versionCode = 8
+        versionName = "0.3.6"
     }
 
     buildFeatures { compose = true; buildConfig = true }
@@ -44,7 +44,6 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:1.6.2")
     implementation("androidx.camera:camera-view:1.6.2")
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
-    implementation("androidx.security:security-crypto:1.1.0")
 
     testImplementation("junit:junit:4.13.2")
 }

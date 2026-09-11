@@ -26,7 +26,15 @@ data class LoansResponse(val loans: List<Loan>)
 data class TmdbResult(@SerializedName("tmdb_id") val tmdbId: Int, val title: String, val year: Int?, val overview: String, @SerializedName("poster_path") val posterPath: String?)
 data class TmdbResponse(val results: List<TmdbResult>)
 data class BarcodeProduct(@SerializedName("product_title") val productTitle: String?, @SerializedName("search_title") val searchTitle: String?)
-data class BarcodeResponse(val status: String, val upc: String?, val movie: Movie?, val product: BarcodeProduct?, @SerializedName("tmdb_results") val tmdbResults: List<TmdbResult>?)
+data class BarcodeLookup(val title: String, val year: Int?)
+data class BarcodeResponse(
+    val status: String,
+    val upc: String?,
+    val movie: Movie?,
+    val product: BarcodeProduct?,
+    val lookup: BarcodeLookup?,
+    @SerializedName("tmdb_results") val tmdbResults: List<TmdbResult>?
+)
 data class AddMovieRequest(@SerializedName("tmdb_id") val tmdbId: Int?, val title: String, val year: Int?, val overview: String?, @SerializedName("poster_path") val posterPath: String?, val format: String, val upc: String?)
 
 interface HomebusterApi {

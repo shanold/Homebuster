@@ -30,12 +30,20 @@ fun ScannerScreen(onCode: (String) -> Unit, onBack: () -> Unit) {
     var granted by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted = it }
     LaunchedEffect(Unit) { if (!granted) launcher.launch(Manifest.permission.CAMERA) }
-    Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Scan DVD / Blu-ray barcode", style = MaterialTheme.typography.titleLarge)
-            TextButton(onClick = onBack) { Text("Back") }
+    Column(Modifier.fillMaxSize().padding(16.dp)) {
+        HomebusterScreenHeader("Scan barcode", onBack)
+        Text("Point the camera at the UPC/EAN barcode on your DVD, Blu-ray, or 4K case.", color = HbMuted)
+        Spacer(Modifier.height(12.dp))
+        if (granted) {
+            Card(
+                modifier = Modifier.fillMaxSize(),
+                colors = CardDefaults.cardColors(containerColor = HbPanel),
+                border = androidx.compose.foundation.BorderStroke(1.dp, HbLine),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp)
+            ) { CameraBarcodePreview(onCode) }
+        } else {
+            HomebusterErrorCard("Camera permission is required to scan barcodes.")
         }
-        if (granted) CameraBarcodePreview(onCode) else Text("Camera permission is required to scan barcodes.", Modifier.padding(16.dp))
     }
 }
 

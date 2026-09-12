@@ -237,6 +237,10 @@ https://github.com/TheMarveled/movie-cataloguer
 Released under the MIT License. See `LICENSE`.
 
 
+## v0.3.17 matching cleanup
+
+The web **Identify** and **Match / Repair Movies** flows now run unmatched legacy titles through the same conservative barcode-title parser used by the scanner before querying TMDb. The stored title is not changed unless a match is accepted. This is a server-only change; the Android companion remains v0.3.16.
+
 ## Android companion app (v0.3.16)
 
 - Android respects system status/navigation bar safe areas on modern Android.

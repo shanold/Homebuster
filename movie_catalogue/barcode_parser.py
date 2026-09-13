@@ -32,7 +32,21 @@ _EDITION_PATTERN = re.compile(
     re.I,
 )
 
-_DISC_PATTERN = re.compile(r"(?P<count>\d{1,2})[- ]Disc(?:\s+(?:Set|Collection))?", re.I)
+_DISC_COUNT_WORDS = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
+    "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
+}
+_DISC_PATTERN = re.compile(
+    r"(?P<count>\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)"
+    r"[- ]?(?:Disc|Disk)s?(?:\s+(?:Set|Collection))?",
+    re.I,
+)
+
+
+def _disc_count(match: re.Match[str]) -> int:
+    token = match.group("count").lower()
+    return int(token) if token.isdigit() else _DISC_COUNT_WORDS[token]
+
 _REGION_PATTERN = re.compile(
     r"(?:Region\s*(?P<region>[1-8ABC])|(?P<free>Region[- ]?Free|All\s+Regions?))",
     re.I,
@@ -301,7 +315,7 @@ def _strip_bracketed_metadata(
             return " "
         disc = _DISC_PATTERN.fullmatch(content)
         if disc:
-            state["disc_count"] = state.get("disc_count") or int(disc.group("count"))
+            state["disc_count"] = state.get("disc_count") or _disc_count(disc)
             return " "
         if _EDITION_PATTERN.fullmatch(content):
             edition = _normalize_spaces(content)
@@ -413,7 +427,7 @@ def parse_barcode_product_title(raw_title: str, distributor_hint: str | None = N
             # dedicated disc_count field.
             disc_prefix = _DISC_PATTERN.match(edition)
             if disc_prefix:
-                state["disc_count"] = state["disc_count"] or int(disc_prefix.group("count"))
+                state["disc_count"] = state["disc_count"] or _disc_count(disc_prefix)
                 edition = _strip_outer_separators(edition[disc_prefix.end():])
             if edition and edition not in editions:
                 editions.insert(0, edition)
@@ -422,7 +436,7 @@ def parse_barcode_product_title(raw_title: str, distributor_hint: str | None = N
 
         disc_match = _suffix_match(value, _DISC_PATTERN)
         if disc_match:
-            state["disc_count"] = state["disc_count"] or int(disc_match.group("count"))
+            state["disc_count"] = state["disc_count"] or _disc_count(disc_match)
             value = _strip_outer_separators(value[:disc_match.start()])
             continue
 
@@ -518,6 +532,118 @@ def parse_barcode_product_title(raw_title: str, distributor_hint: str | None = N
     )
 
 
+
+def _strip_canonical_title(raw: str, canonical_title: str) -> str:
+    """Remove a confirmed movie title from product text, tolerating punctuation/typos."""
+    raw = _normalize_spaces(raw)
+    canonical = _normalize_spaces(canonical_title)
+    if not raw or not canonical:
+        return raw
+
+    words = re.findall(r"[A-Za-z0-9]+", canonical)
+    if words:
+        flexible = r"(?<![A-Za-z0-9])" + r"[^A-Za-z0-9]+".join(re.escape(w) for w in words) + r"(?![A-Za-z0-9])"
+        match = re.search(flexible, raw, re.I)
+        if match:
+            return _strip_outer_separators(raw[:match.start()] + " " + raw[match.end():])
+
+    # A legacy title can contain a small typo (Tale/Tail).  If the beginning
+    # of the product description is an overwhelmingly close token match to the
+    # TMDb-confirmed title, treat those leading tokens as the title anchor.
+    canonical_tokens = re.findall(r"[A-Za-z0-9]+", canonical)
+    raw_tokens = list(re.finditer(r"[A-Za-z0-9]+", raw))
+    if canonical_tokens and len(raw_tokens) >= len(canonical_tokens):
+        candidate = " ".join(m.group(0) for m in raw_tokens[:len(canonical_tokens)])
+        if SequenceMatcher(None, _normalized_title(candidate), _normalized_title(canonical)).ratio() >= 0.90:
+            return _strip_outer_separators(raw[raw_tokens[len(canonical_tokens)-1].end():])
+    return raw
+
+
+def infer_copy_metadata_from_legacy_title(raw_title: str, canonical_title: str) -> dict:
+    """Recover physical-copy metadata after TMDb confirms the movie title.
+
+    Unlike the conservative title parser, this pass can search the leftover
+    product description in any order because the canonical movie title has
+    already been established.  It returns metadata only; it never mutates the
+    title itself.
+    """
+    raw = _normalize_spaces(raw_title)
+    leftover = _strip_canonical_title(raw, canonical_title)
+    parsed = parse_barcode_product_title(raw)
+
+    formats: list[str] = []
+    for match in re.finditer(r"4K(?:\s+Ultra\s+HD|\s+UHD)?|Ultra\s+HD|UHD|Blue?[- ]?ray|HD[- ]?DVD|DVD|VHS", leftover, re.I):
+        token = match.group(0)
+        if re.fullmatch(r"Blue?[- ]?ray", token, re.I):
+            canonical = "Blu-ray"
+        else:
+            canonical = _canonical_format(token)
+        if canonical and canonical not in formats:
+            formats.append(canonical)
+
+    disc_match = _DISC_PATTERN.search(leftover)
+    disc_count = _disc_count(disc_match) if disc_match else parsed.disc_count
+
+    region_match = _REGION_PATTERN.search(leftover)
+    region = _canonical_region(region_match.group(0)) if region_match else parsed.region
+
+    language = parsed.language
+    # Once the canonical title is removed, bare language words are safe to
+    # treat as product metadata; title words such as Johnny English are gone.
+    language_matches = []
+    for match in _LANGUAGE_SEQUENCE_PATTERN.finditer(leftover):
+        value = _canonical_languages(match.group(0))
+        if value:
+            for item in value.split(" + "):
+                if item not in language_matches:
+                    language_matches.append(item)
+    if language_matches:
+        language = " + ".join(language_matches)
+
+    edition = parsed.edition
+    known_editions = list(_EDITION_PATTERN.finditer(leftover))
+    if known_editions:
+        # Prefer the most specific recognized edition text found outside the
+        # confirmed movie title, regardless of where formats/disc info occurs.
+        edition = max((_normalize_spaces(m.group(0)) for m in known_editions), key=len)
+        prefix = _DISC_PATTERN.match(edition)
+        if prefix:
+            disc_count = disc_count or _disc_count(prefix)
+            edition = _strip_outer_separators(edition[prefix.end():])
+    else:
+        # Unknown marketing editions do not need a dictionary entry. First
+        # remove other independently detected copy metadata so words such as
+        # "Blu-ray" or "two disk" cannot become part of the edition label.
+        edition_source = leftover
+        for pattern, _ in _FORMAT_PATTERNS:
+            edition_source = pattern.sub(" ", edition_source)
+        edition_source = re.sub(r"Blue?[- ]?ray", " ", edition_source, flags=re.I)
+        edition_source = _DISC_PATTERN.sub(" ", edition_source)
+        edition_source = _REGION_PATTERN.sub(" ", edition_source)
+        edition_source = _PACKAGING_PATTERN.sub(" ", edition_source)
+        edition_source = _VIDEO_STANDARD_PATTERN.sub(" ", edition_source)
+        edition_source = _CATALOG_CATEGORY_PATTERN.sub(" ", edition_source)
+        for distributor_name in sorted(_KNOWN_DISTRIBUTORS, key=len, reverse=True):
+            edition_source = re.sub(re.escape(distributor_name), " ", edition_source, flags=re.I)
+        edition_source = re.sub(r"\s*[,;|:/+&-]\s*", " ", edition_source)
+        edition_source = _normalize_spaces(edition_source)
+        generic = re.search(
+            r"(?<![A-Za-z0-9])(?P<edition>(?:[A-Za-z0-9'’.-]+\s+){0,3}[A-Za-z0-9'’.-]+\s+Edition)(?![A-Za-z0-9])",
+            edition_source,
+            re.I,
+        )
+        if generic:
+            edition = _normalize_spaces(generic.group("edition"))
+
+    return {
+        "formats": tuple(formats) if formats else parsed.formats,
+        "format": " + ".join(formats) if formats else parsed.format,
+        "edition": edition,
+        "language": language,
+        "region": region,
+        "disc_count": disc_count,
+    }
+
 def _normalized_title(value: str) -> str:
     decomposed = unicodedata.normalize("NFKD", value or "")
     asciiish = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
@@ -589,6 +715,7 @@ def _strip_known_metadata_anywhere(value: str) -> tuple[str, bool]:
     original = value
     value = _EDITION_PATTERN.sub(" ", value)
     value = _PACKAGING_PATTERN.sub(" ", value)
+    value = _DISC_PATTERN.sub(" ", value)
     value = _REGION_PATTERN.sub(" ", value)
     value = _VIDEO_STANDARD_PATTERN.sub(" ", value)
     value = _CATALOG_CATEGORY_PATTERN.sub(" ", value)
@@ -629,7 +756,21 @@ def generate_movie_title_candidates(raw_title: str) -> list[str]:
 
     candidates: list[str] = []
     parsed = parse_barcode_product_title(raw)
-    for value in (parsed.title, parsed.fallback_title, raw):
+    metadata_clean, changed = _strip_known_metadata_anywhere(raw)
+
+    # Put the strongest cleanup options first because bulk repair deliberately
+    # caps TMDb usage. A single unexplained marketing word after known metadata
+    # gets one progressively shorter candidate; high-confidence scoring still
+    # decides whether it is safe to accept.
+    _append_unique_candidate(candidates, parsed.title)
+    _append_unique_candidate(candidates, metadata_clean)
+    words = metadata_clean.split()
+    generic_clean = _strip_generic_edition(_strip_media_words(_strip_trailing_note(metadata_clean)))
+    before_generic = len(candidates)
+    _append_unique_candidate(candidates, generic_clean)
+    if len(candidates) == before_generic and changed and len(words) >= 2:
+        _append_unique_candidate(candidates, " ".join(words[:-1]))
+    for value in (parsed.fallback_title, raw):
         _append_unique_candidate(candidates, value)
 
     # Apply generic transforms both to the raw title and to parser-produced
@@ -655,16 +796,11 @@ def generate_movie_title_candidates(raw_title: str) -> list[str]:
         combined = _strip_generic_edition(_strip_media_words(_strip_trailing_note(seed)))
         _append_unique_candidate(candidates, combined)
 
-    metadata_clean, changed = _strip_known_metadata_anywhere(raw)
-    _append_unique_candidate(candidates, metadata_clean)
-
-    # If strong metadata was removed but unexplained catalog words still trail
-    # a long title, try progressively shorter stems. These are search options
-    # only; high-confidence matching protects against destructive guesses.
-    words = metadata_clean.split()
-    if changed and len(words) >= 5:
-        max_trim = min(4, len(words) - 1)
-        for trim in range(1, max_trim + 1):
+    # Additional shorter stems are late fallbacks for manual Identify. Bulk
+    # repair sees only the first three candidates above.
+    if changed and len(words) >= 4:
+        max_trim = min(3, len(words) - 2)
+        for trim in range(2, max_trim + 1):
             _append_unique_candidate(candidates, " ".join(words[:-trim]))
 
     return candidates[:12]

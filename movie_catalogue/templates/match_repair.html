@@ -1,0 +1,96 @@
+{% extends 'base.html' %}
+{% block content %}
+{% include '_library_nav.html' %}
+<div class="page-heading">
+  <div>
+    <h2>Match / Repair Movies</h2>
+    <p>Homebuster will process this library in small committed batches. Unmatched movies use at most three TMDb title searches, and automatic matches still require high confidence.</p>
+  </div>
+</div>
+<section class="panel narrow-progress">
+  <h3>Library scan</h3>
+  <p><strong id="progress-count">0 / {{ total }}</strong> movies processed</p>
+  <progress id="repair-progress" value="0" max="{{ total or 1 }}" style="width:100%"></progress>
+  <div class="stats repair-stats">
+    <span>Matched: <strong id="matched">0</strong></span>
+    <span>Refreshed: <strong id="refreshed">0</strong></span>
+    <span>Metadata repaired: <strong id="metadata">0</strong></span>
+    <span>Needs review: <strong id="unmatched">0</strong></span>
+    <span>Failed: <strong id="failed">0</strong></span>
+  </div>
+  <p id="repair-status" class="muted">Ready. Existing metadata you entered manually will not be overwritten.</p>
+  <div class="toolbar">
+    <button id="start-repair" class="primary" type="button">Start Match / Repair</button>
+    <a class="button" href="{{ url_for('catalog.library_home', library_id=library.id) }}">Back to Library</a>
+  </div>
+</section>
+<script>
+(() => {
+  const total = {{ total|int }};
+  const endpoint = {{ url_for('catalog.match_repair_batch', library_id=library.id)|tojson }};
+  const csrf = {{ csrf_token()|tojson }};
+  const button = document.getElementById('start-repair');
+  const status = document.getElementById('repair-status');
+  const progress = document.getElementById('repair-progress');
+  const count = document.getElementById('progress-count');
+  const totals = {processed: 0, matched: 0, refreshed: 0, metadata: 0, unmatched: 0, failed: 0};
+  let afterId = 0;
+  let running = false;
+
+  function render() {
+    count.textContent = `${totals.processed} / ${total}`;
+    progress.value = totals.processed;
+    for (const key of ['matched', 'refreshed', 'metadata', 'unmatched', 'failed']) {
+      document.getElementById(key).textContent = totals[key];
+    }
+  }
+
+  async function runNextBatch() {
+    if (!running) return;
+    status.textContent = `Processing movies ${totals.processed + 1} onward…`;
+    let response;
+    try {
+      response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
+        body: JSON.stringify({after_id: afterId})
+      });
+    } catch (error) {
+      running = false;
+      button.disabled = false;
+      button.textContent = 'Resume Match / Repair';
+      status.textContent = `Network error: ${error}. Completed batches were already saved; press Resume to continue.`;
+      return;
+    }
+    let data = {};
+    try { data = await response.json(); } catch (_) {}
+    if (!response.ok) {
+      running = false;
+      button.disabled = false;
+      button.textContent = 'Resume Match / Repair';
+      status.textContent = data.error || `Server error ${response.status}. Completed batches were already saved.`;
+      return;
+    }
+    for (const key of Object.keys(totals)) totals[key] += Number(data[key] || 0);
+    afterId = Number(data.after_id || afterId);
+    render();
+    if (data.done) {
+      running = false;
+      button.disabled = true;
+      button.textContent = 'Complete';
+      status.textContent = `Complete: ${totals.matched} matched, ${totals.refreshed} refreshed, ${totals.metadata} copy metadata repairs, ${totals.unmatched} need review, ${totals.failed} failed.`;
+      return;
+    }
+    setTimeout(runNextBatch, 80);
+  }
+
+  button.addEventListener('click', () => {
+    if (running) return;
+    running = true;
+    button.disabled = true;
+    button.textContent = 'Running…';
+    runNextBatch();
+  });
+})();
+</script>
+{% endblock %}

@@ -238,6 +238,12 @@ Released under the MIT License. See `LICENSE`.
 
 
 
+## v0.3.19 canonical metadata repair and visible bulk progress
+
+Identify and **Match / Repair Movies** now use the TMDb-confirmed canonical movie title as an anchor to recover physical-copy metadata from noisy legacy names. Format, Edition, Language, Region, and Disc Count are filled into their dedicated fields only when the existing value is blank or `Unknown`; manual corrections are preserved. Metadata can appear in mixed order, and disc counts accept both numeric and word forms such as `2 Disc` and `two disk`.
+
+Bulk Match / Repair now runs on a progress page in small committed batches instead of one long silent request. The page reports processed, matched, refreshed, metadata-repaired, review-needed, and failed counts. Automatic matching remains high-confidence-only, and unmatched movies use at most three TMDb search requests before Homebuster gives up and leaves the entry for manual review. This is a server-only release; the Android companion remains v0.3.16.
+
 ## v0.3.18 smarter legacy-title matching
 
 Identify and **Match / Repair Movies** now try multiple conservative TMDb search candidates instead of relying on one strictly parsed title. Old library entries can recover from combined media wording, trailing parenthetical notes, generic edition labels, collection labels, and very small title typos. Candidate cleanup never rewrites the stored title by itself; a title changes only after a TMDb match is selected or accepted at high confidence. Bulk matching remains conservative and leaves ambiguous remakes/box sets unmatched.

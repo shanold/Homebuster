@@ -12,10 +12,11 @@ def test_identify_and_bulk_match_use_barcode_title_parser():
     assert "parsed = parse_barcode_product_title" in text
     assert "query_titles, query_year = _match_queries_for_movie(movie)" in text
     # Both the bulk matcher and the manual Identify page should search with the cleaned query.
-    assert text.count("_tmdb_search_candidates(query_titles, query_year)") >= 2
+    assert "_tmdb_search_candidates(query_titles, query_year)" in text
+    assert "_find_high_confidence_match(query_titles, query_year, search_cache)" in text
     # Confidence scoring must compare against the same cleaned title/year used for search.
-    assert "high_confidence_tmdb_match(query_titles, query_year, normalized)" in text
+    assert "high_confidence_tmdb_match(searched_titles, query_year, _normalized_tmdb_matches(merged))" in text
 
 
 def test_v0317_server_version():
-    assert 'APP_VERSION = "0.3.18"' in CONFIG.read_text()
+    assert 'APP_VERSION = "0.3.19"' in CONFIG.read_text()

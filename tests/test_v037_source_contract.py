@@ -15,10 +15,10 @@ def test_v037_brand_and_mobile_contracts():
     assert "val version: String?" in api
     assert "val edition: String?" in api
 
-def test_server_and_android_versions_match():
+def test_server_version_can_advance_for_server_only_releases():
     import re
     config = (ROOT / "movie_catalogue/config.py").read_text()
     gradle = (ROOT / "android/app/build.gradle.kts").read_text()
     server = re.search(r'APP_VERSION\s*=\s*"([^"]+)"', config).group(1)
     android = re.search(r'versionName\s*=\s*"([^"]+)"', gradle).group(1)
-    assert server == android
+    assert tuple(map(int, server.split("."))) >= tuple(map(int, android.split(".")))

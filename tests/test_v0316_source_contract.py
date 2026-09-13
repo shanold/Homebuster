@@ -11,9 +11,10 @@ def test_v0316_source_contract():
     assert "def _group_movie_rows" in catalog
     assert "high_confidence_tmdb_match" in catalog
     assert "match-repair" in catalog
-    assert "Match / Repair complete:" in catalog
+    assert "def match_repair_batch" in catalog
+    assert "BULK_REPAIR_BATCH_SIZE" in catalog
     assert "_mobile_poster_url(data.get(\"poster_path\"))" in mobile
     assert "Match / Repair Movies" in catalogue
     assert "movie.copy_count > 1" in catalogue
     assert "Physical copies" in detail
-    assert 'APP_VERSION = "0.3.18"' in config
+    assert 'APP_VERSION = "0.3.19"' in config

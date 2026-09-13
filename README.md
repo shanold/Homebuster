@@ -290,3 +290,11 @@ android/RELEASE_SIGNING.md
 ```
 
 After the signing key is configured, build with `./gradlew assembleRelease`.
+
+## v0.3.23 faster Match / Repair and corrected-title review search
+
+- Match / Repair now processes only unresolved or pending-review movies by default.
+- The scan screen includes an off-by-default **Refresh metadata for already matched movies** option. Enable it when you intentionally want to refresh TMDb-derived title/year/poster data for matched entries.
+- Progress totals reflect the selected scan mode instead of always using the full library size.
+- The persistent review queue now has an editable TMDb search-title box, so spelling/title corrections can be searched without leaving the review workflow.
+- Android is unchanged from v0.3.20 / versionCode 15 for this server-only release.

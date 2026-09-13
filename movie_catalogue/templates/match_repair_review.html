@@ -11,6 +11,13 @@
 <section class="panel">
   <h3>{{ movie.title }}</h3>
   <p class="muted">{{ movie.year or 'Year unknown' }} · {{ movie.format or 'Format unknown' }}{% if movie.version %} · {{ movie.version }}{% endif %}</p>
+  <form method="get" class="toolbar review-title-search">
+    <input type="hidden" name="after_id" value="{{ after_id }}">
+    <label for="search-title"><strong>Search TMDb with a corrected title</strong></label>
+    <input id="search-title" name="search_title" type="text" value="{{ search_title or movie.title }}" placeholder="Movie title" autocomplete="off">
+    <button class="primary" type="submit">Search</button>
+  </form>
+  {% if search_title %}<p class="muted">Showing TMDb results for “{{ search_title }}”.</p>{% endif %}
   <div class="toolbar">
     <a class="button" href="{{ url_for('catalog.match_repair_review', library_id=library.id, after_id=movie.id) }}">Skip for now</a>
     <form method="post" class="inline">

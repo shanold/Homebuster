@@ -9,8 +9,10 @@
 </div>
 <section class="panel narrow-progress">
   <h3>Library scan</h3>
-  <p><strong id="progress-count">0 / {{ total }}</strong> movies processed</p>
-  <progress id="repair-progress" value="0" max="{{ total or 1 }}" style="width:100%"></progress>
+  <p><strong id="progress-count">0 / {{ unresolved_total }}</strong> movies processed</p>
+  <progress id="repair-progress" value="0" max="{{ unresolved_total or 1 }}" style="width:100%"></progress>
+  <label class="checkbox-row"><input id="refresh-matched" name="refresh_matched" type="checkbox"> Refresh metadata for already matched movies</label>
+  <p class="muted">Off by default. Normal scans only process unresolved or pending-review movies. Enable this to also refresh canonical TMDb title, year, and poster for matched movies.</p>
   <div class="stats repair-stats">
     <span>Matched: <strong id="matched">0</strong></span>
     <span>Refreshed: <strong id="refreshed">0</strong></span>
@@ -26,12 +28,14 @@
 </section>
 <script>
 (() => {
-  const total = {{ total|int }};
+  const unresolvedTotal = {{ unresolved_total|int }};
+  const libraryTotal = {{ library_total|int }};
   const endpoint = {{ url_for('catalog.match_repair_batch', library_id=library.id)|tojson }};
   const reviewUrl = {{ url_for('catalog.match_repair_review', library_id=library.id)|tojson }};
   const libraryUrl = {{ url_for('catalog.library_home', library_id=library.id)|tojson }};
   const csrf = {{ csrf_token()|tojson }};
   const button = document.getElementById('start-repair');
+  const refreshMatched = document.getElementById('refresh-matched');
   const status = document.getElementById('repair-status');
   const progress = document.getElementById('repair-progress');
   const count = document.getElementById('progress-count');
@@ -40,8 +44,12 @@
   let running = false;
   let completionTarget = null;
 
+  function selectedTotal() { return refreshMatched.checked ? libraryTotal : unresolvedTotal; }
+
   function render() {
+    const total = selectedTotal();
     count.textContent = `${totals.processed} / ${total}`;
+    progress.max = total || 1;
     progress.value = totals.processed;
     for (const key of ['matched', 'refreshed', 'metadata', 'unmatched', 'failed']) {
       document.getElementById(key).textContent = totals[key];
@@ -56,7 +64,7 @@
       response = await fetch(endpoint, {
         method: 'POST',
         headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
-        body: JSON.stringify({after_id: afterId})
+        body: JSON.stringify({after_id: afterId, refresh_matched: refreshMatched.checked})
       });
     } catch (error) {
       running = false;
@@ -92,6 +100,10 @@
     }
     setTimeout(runNextBatch, 80);
   }
+
+  refreshMatched.addEventListener('change', () => {
+    if (!running && totals.processed === 0) render();
+  });
 
   button.addEventListener('click', () => {
     if (completionTarget) { window.location.href = completionTarget; return; }

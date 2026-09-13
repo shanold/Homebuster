@@ -730,8 +730,18 @@ def match_repair_page(library_id, library, role):
     if not current_app.config.get("TMDB_API_KEY"):
         flash("TMDB_API_KEY is not configured.", "warning")
         return redirect(url_for("catalog.library_home", library_id=library_id))
-    total = get_db().execute("SELECT COUNT(*) AS n FROM movies WHERE library_id=?", (library_id,)).fetchone()["n"]
-    return render_template("match_repair.html", library=library, role=role, total=total)
+    db = get_db()
+    unresolved_total = db.execute(
+        "SELECT COUNT(*) AS n FROM movies WHERE library_id=? AND (tmdb_id IS NULL OR review_pending=1)",
+        (library_id,),
+    ).fetchone()["n"]
+    library_total = db.execute(
+        "SELECT COUNT(*) AS n FROM movies WHERE library_id=?", (library_id,)
+    ).fetchone()["n"]
+    return render_template(
+        "match_repair.html", library=library, role=role,
+        total=unresolved_total, unresolved_total=unresolved_total, library_total=library_total,
+    )
 
 
 @bp.post("/libraries/<int:library_id>/match-repair/batch")
@@ -745,12 +755,19 @@ def match_repair_batch(library_id, library, role):
         after_id = max(0, int(payload.get("after_id") or 0))
     except (TypeError, ValueError):
         after_id = 0
+    refresh_matched = bool(payload.get("refresh_matched", False))
 
     db = get_db()
-    rows = db.execute(
-        "SELECT * FROM movies WHERE library_id=? AND id>? ORDER BY id LIMIT ?",
-        (library_id, after_id, BULK_REPAIR_BATCH_SIZE),
-    ).fetchall()
+    if refresh_matched:
+        rows = db.execute(
+            "SELECT * FROM movies WHERE library_id=? AND id>? ORDER BY id LIMIT ?",
+            (library_id, after_id, BULK_REPAIR_BATCH_SIZE),
+        ).fetchall()
+    else:
+        rows = db.execute(
+            "SELECT * FROM movies WHERE library_id=? AND id>? AND (tmdb_id IS NULL OR review_pending=1) ORDER BY id LIMIT ?",
+            (library_id, after_id, BULK_REPAIR_BATCH_SIZE),
+        ).fetchall()
     counts = {"processed": 0, "matched": 0, "refreshed": 0, "metadata": 0, "unmatched": 0, "failed": 0}
     details_cache = {}
     search_cache = {}
@@ -793,9 +810,15 @@ def match_repair_batch(library_id, library, role):
 
     db.commit()
     next_after_id = rows[-1]["id"] if rows else after_id
-    more = db.execute(
-        "SELECT 1 FROM movies WHERE library_id=? AND id>? LIMIT 1", (library_id, next_after_id)
-    ).fetchone() is not None
+    if refresh_matched:
+        more = db.execute(
+            "SELECT 1 FROM movies WHERE library_id=? AND id>? LIMIT 1", (library_id, next_after_id)
+        ).fetchone() is not None
+    else:
+        more = db.execute(
+            "SELECT 1 FROM movies WHERE library_id=? AND id>? AND (tmdb_id IS NULL OR review_pending=1) LIMIT 1",
+            (library_id, next_after_id),
+        ).fetchone() is not None
     return jsonify({**counts, "after_id": next_after_id, "done": not more})
 
 
@@ -860,10 +883,17 @@ def match_repair_review(library_id, library, role):
         return render_template(
             "match_repair_review.html",
             library=library, role=role, movie=None, results=[], poster_size=current_app.config.get("TMDB_POSTER_SIZE", "w342"),
-            remaining_review=remaining_review, after_id=after_id,
+            remaining_review=remaining_review, after_id=after_id, search_title="",
         )
 
-    query_titles, query_year = _match_queries_for_movie(movie)
+    search_title = (request.args.get("search_title") or "").strip()
+    if search_title:
+        query_titles = search_ready_movie_title_candidates(search_title)
+        if search_title not in query_titles:
+            query_titles.insert(0, search_title)
+        query_year = None
+    else:
+        query_titles, query_year = _match_queries_for_movie(movie)
     try:
         results = _tmdb_search_candidates(query_titles, query_year, max_searches=MAX_MATCH_SEARCHES)
     except requests.RequestException:
@@ -876,7 +906,7 @@ def match_repair_review(library_id, library, role):
     return render_template(
         "match_repair_review.html",
         library=library, role=role, movie=movie, results=results, poster_size=current_app.config.get("TMDB_POSTER_SIZE", "w342"),
-        remaining_review=remaining_review, after_id=after_id,
+        remaining_review=remaining_review, after_id=after_id, search_title=search_title,
     )
 
 

@@ -10,7 +10,12 @@ from flask_login import current_user, login_required
 
 from .db import get_db
 from .permissions import require_library_role
-from .barcode_parser import parse_barcode_product_title, rank_tmdb_results
+from .barcode_parser import (
+    generate_movie_title_candidates,
+    high_confidence_tmdb_match,
+    infer_legacy_title_year,
+    parse_barcode_product_title,
+)
 
 bp = Blueprint("catalog", __name__)
 
@@ -49,41 +54,35 @@ def _group_movie_rows(rows):
     return groups
 
 
-def _match_query_for_movie(movie):
-    """Build the TMDb query for an existing movie using the scanner title parser.
 
-    The stored title is left untouched until a TMDb match is actually accepted.
-    A structured year already stored on the movie wins over a year parsed from
-    the legacy title; parsed years are used when the year field is empty.
+def _match_queries_for_movie(movie):
+    """Build multiple safe TMDb search candidates for an existing movie.
+
+    The stored title is never mutated by candidate generation. A structured
+    year already stored on the movie wins over a year parsed from legacy text.
     """
     raw_title = (movie["title"] or "").strip()
     parsed = parse_barcode_product_title(raw_title)
-    query_title = (parsed.title or raw_title).strip()
-    query_year = movie["year"] if movie["year"] not in (None, "") else parsed.year
-    return query_title, query_year
+    query_titles = generate_movie_title_candidates(raw_title) or [raw_title]
+    query_year = movie["year"] if movie["year"] not in (None, "") else infer_legacy_title_year(raw_title)
+    return query_titles, query_year
 
 
-def _high_confidence_match(title, year, results):
-    """Return only a deliberately conservative, unambiguous TMDb match."""
-    try:
-        query_year = int(year) if year not in (None, "") else None
-    except (TypeError, ValueError):
-        query_year = None
-    ranked = rank_tmdb_results(title, query_year, results)
-    if not ranked:
-        return None
-    top = ranked[0]
-    top_score = int(top.get("match_score") or 0)
-    second_score = int(ranked[1].get("match_score") or 0) if len(ranked) > 1 else 0
-    # Exact title + exact year is extremely strong.  Without a year, require
-    # a clear score gap so remakes with the same title are never guessed.
-    if query_year is not None:
-        if top_score < 140 or (len(ranked) > 1 and top_score - second_score < 20):
-            return None
-    elif top_score < 110 or (len(ranked) > 1 and top_score - second_score < 20):
-        return None
-    return top
-
+def _tmdb_search_candidates(query_titles, year=None):
+    """Search each candidate and merge TMDb movies without duplicate IDs."""
+    merged = []
+    seen_ids = set()
+    for title in query_titles:
+        if not title:
+            continue
+        for item in _tmdb_search(title, year):
+            tmdb_id = item.get("id")
+            key = ("id", tmdb_id) if tmdb_id is not None else ("title", item.get("title"), item.get("release_date"))
+            if key in seen_ids:
+                continue
+            seen_ids.add(key)
+            merged.append(item)
+    return merged
 
 def _int_or_none(value):
     if value in (None, ""):
@@ -652,10 +651,10 @@ def match_repair_movies(library_id, library, role):
                 if data:
                     refreshed += 1
             else:
-                query_title, query_year = _match_query_for_movie(movie)
-                cache_key = (query_title, query_year)
+                query_titles, query_year = _match_queries_for_movie(movie)
+                cache_key = (tuple(query_titles), query_year)
                 if cache_key not in search_cache:
-                    raw = _tmdb_search(query_title, query_year)
+                    raw = _tmdb_search_candidates(query_titles, query_year)
                     normalized = []
                     for item in raw:
                         date = item.get("release_date") or ""
@@ -663,7 +662,7 @@ def match_repair_movies(library_id, library, role):
                             "tmdb_id": item.get("id"), "title": item.get("title") or item.get("original_title") or "",
                             "year": int(date[:4]) if len(date) >= 4 and date[:4].isdigit() else None,
                         })
-                    search_cache[cache_key] = _high_confidence_match(query_title, query_year, normalized)
+                    search_cache[cache_key] = high_confidence_tmdb_match(query_titles, query_year, normalized)
                 choice = search_cache[cache_key]
                 if choice:
                     tmdb_id = choice["tmdb_id"]
@@ -750,9 +749,9 @@ def identify_movie(library_id, movie_id, library, role):
             (data.get("title") or movie["title"], (data.get("release_date") or "")[:4] or movie["year"], poster, tmdb_id, movie_id, library_id),
         ); db.commit(); flash("Movie identified with TMDb.", "success")
         return redirect(url_for("catalog.movie_detail", library_id=library_id, movie_id=movie_id))
-    query_title, query_year = _match_query_for_movie(movie)
+    query_titles, query_year = _match_queries_for_movie(movie)
     try:
-        results = _tmdb_search(query_title, query_year)
+        results = _tmdb_search_candidates(query_titles, query_year)
     except requests.RequestException:
         results = []; flash("TMDb search failed. Try again later.", "error")
     poster_size = current_app.config.get("TMDB_POSTER_SIZE", "w342")

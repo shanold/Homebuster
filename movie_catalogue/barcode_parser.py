@@ -528,6 +528,209 @@ def _number_tokens(value: str) -> tuple[str, ...]:
     return tuple(re.findall(r"\b\d+\b", _normalized_title(value)))
 
 
+
+
+def _append_unique_candidate(candidates: list[str], value: str) -> None:
+    value = _strip_outer_separators(_normalize_spaces(value))
+    if not value or value.lower() in {"the", "a", "an"}:
+        return
+    key = _normalized_title(value)
+    if key and all(_normalized_title(existing) != key for existing in candidates):
+        candidates.append(value)
+
+
+def _strip_trailing_note(value: str) -> str:
+    return re.sub(r"\s*[\[(][^\[\]()]{1,80}[\])]\s*$", "", value).strip()
+
+
+def _strip_media_words(value: str) -> str:
+    for pattern, _ in _FORMAT_PATTERNS:
+        value = pattern.sub(" ", value)
+    # Removing media tokens can leave punctuation/connectors behind, e.g.
+    # "Beauty and the Beast, DVD and Blu-ray" -> "... , and".
+    value = re.sub(r"(?:\s+(?:and|with)|\s*[,/&+\-]\s*)+$", "", value, flags=re.I)
+    return value
+
+
+def infer_legacy_title_year(raw_title: str) -> int | None:
+    """Infer a release year from noisy metadata only when context makes it safe."""
+    raw = _normalize_spaces(raw_title)
+    if not raw:
+        return None
+    parsed = parse_barcode_product_title(raw)
+
+    # A year embedded in a real title (e.g. "2001: A Space Odyssey") must not
+    # automatically become a release year. Only trust an embedded year when
+    # the same string also contains a strong product-metadata cue.
+    has_product_context = bool(
+        _EDITION_PATTERN.search(raw)
+        or _PACKAGING_PATTERN.search(raw)
+        or _REGION_PATTERN.search(raw)
+        or _CATALOG_CATEGORY_PATTERN.search(raw)
+        or any(pattern.search(raw) for pattern, _ in _FORMAT_PATTERNS)
+        or any(distributor.lower() in raw.lower() for distributor in _KNOWN_DISTRIBUTORS)
+    )
+    if not has_product_context:
+        return None
+    if parsed.year is not None:
+        return parsed.year
+
+    matches = list(_YEAR_PATTERN.finditer(raw))
+    if len(matches) != 1:
+        return None
+    candidate = int(matches[0].group(0))
+    if 1900 <= candidate <= datetime.now().year + 1:
+        return candidate
+    return None
+
+
+def _strip_known_metadata_anywhere(value: str) -> tuple[str, bool]:
+    """Remove strong product metadata from anywhere for search-candidate use."""
+    original = value
+    value = _EDITION_PATTERN.sub(" ", value)
+    value = _PACKAGING_PATTERN.sub(" ", value)
+    value = _REGION_PATTERN.sub(" ", value)
+    value = _VIDEO_STANDARD_PATTERN.sub(" ", value)
+    value = _CATALOG_CATEGORY_PATTERN.sub(" ", value)
+    for pattern, _ in _FORMAT_PATTERNS:
+        value = pattern.sub(" ", value)
+    for distributor in sorted(_KNOWN_DISTRIBUTORS, key=len, reverse=True):
+        value = re.sub(re.escape(distributor), " ", value, flags=re.I)
+    inferred_year = infer_legacy_title_year(original)
+    if inferred_year is not None:
+        value = re.sub(rf"(?<!\d){inferred_year}(?!\d)", " ", value)
+    value = re.sub(r"\s*[,;|:/+&\-]\s*", " ", value)
+    value = re.sub(r"\b(?:and|with)\s*$", "", value, flags=re.I)
+    value = _normalize_spaces(value)
+    return value, _normalized_title(value) != _normalized_title(original)
+
+
+def _strip_generic_edition(value: str) -> str:
+    # Unknown marketing labels should not require a dictionary entry. This is
+    # deliberately only a candidate transform, never destructive metadata parsing.
+    return re.sub(
+        r"(?:\s*[-–—,:;|]\s*|\s+)[A-Za-z0-9][A-Za-z0-9'’.-]*\s+Edition\s*$",
+        "",
+        value,
+        flags=re.I,
+    ).strip()
+
+
+def generate_movie_title_candidates(raw_title: str) -> list[str]:
+    """Generate conservative TMDb search titles from a noisy legacy title.
+
+    Candidates are alternatives only: generating one never mutates the stored
+    movie title. The structured barcode parser supplies known metadata cleanup,
+    while generic transforms handle old imports that do not fit a strict list.
+    """
+    raw = _normalize_spaces(raw_title)
+    if not raw:
+        return []
+
+    candidates: list[str] = []
+    parsed = parse_barcode_product_title(raw)
+    for value in (parsed.title, parsed.fallback_title, raw):
+        _append_unique_candidate(candidates, value)
+
+    # Apply generic transforms both to the raw title and to parser-produced
+    # candidates so multiple kinds of noise can be removed progressively.
+    for seed in list(candidates):
+        note = _strip_trailing_note(seed)
+        _append_unique_candidate(candidates, note)
+
+        media = _strip_media_words(seed)
+        _append_unique_candidate(candidates, media)
+
+        edition = _strip_generic_edition(seed)
+        _append_unique_candidate(candidates, edition)
+
+        collection = re.sub(
+            r"(?:\s*[-–—,:;|]\s*|\s+)Collection\s*$",
+            "",
+            seed,
+            flags=re.I,
+        )
+        _append_unique_candidate(candidates, collection)
+
+        combined = _strip_generic_edition(_strip_media_words(_strip_trailing_note(seed)))
+        _append_unique_candidate(candidates, combined)
+
+    metadata_clean, changed = _strip_known_metadata_anywhere(raw)
+    _append_unique_candidate(candidates, metadata_clean)
+
+    # If strong metadata was removed but unexplained catalog words still trail
+    # a long title, try progressively shorter stems. These are search options
+    # only; high-confidence matching protects against destructive guesses.
+    words = metadata_clean.split()
+    if changed and len(words) >= 5:
+        max_trim = min(4, len(words) - 1)
+        for trim in range(1, max_trim + 1):
+            _append_unique_candidate(candidates, " ".join(words[:-trim]))
+
+    return candidates[:12]
+
+def high_confidence_tmdb_match(query_titles: Iterable[str], query_year: int | None, results: Iterable[Mapping]) -> dict | None:
+    """Choose only a decisive TMDb match across multiple search candidates."""
+    queries = [q for q in query_titles if _normalized_title(q)]
+    if not queries:
+        return None
+    try:
+        year = int(query_year) if query_year not in (None, "") else None
+    except (TypeError, ValueError):
+        year = None
+
+    scored: list[dict] = []
+    for source in results:
+        item = dict(source)
+        title = str(item.get("title") or "")
+        title_norm = _normalized_title(title)
+        best_score = 0
+        best_similarity = 0.0
+        exact = False
+        for query in queries:
+            query_norm = _normalized_title(query)
+            similarity = SequenceMatcher(None, query_norm, title_norm).ratio() if query_norm and title_norm else 0.0
+            ranked = rank_tmdb_results(query, year, [item])
+            score = int(ranked[0].get("match_score") or 0) if ranked else 0
+            best_score = max(best_score, score)
+            best_similarity = max(best_similarity, similarity)
+            exact = exact or (query_norm == title_norm and bool(query_norm))
+        item["match_score"] = best_score
+        item["match_similarity"] = best_similarity
+        item["match_exact"] = exact
+        scored.append(item)
+
+    scored.sort(key=lambda x: (-int(x.get("match_score") or 0), -float(x.get("match_similarity") or 0.0), str(x.get("title") or "").lower()))
+    if not scored:
+        return None
+    top = scored[0]
+    second = scored[1] if len(scored) > 1 else None
+    top_score = int(top.get("match_score") or 0)
+    second_score = int(second.get("match_score") or 0) if second else 0
+    top_similarity = float(top.get("match_similarity") or 0.0)
+    second_similarity = float(second.get("match_similarity") or 0.0) if second else 0.0
+
+    if year is not None:
+        if top_score >= 140 and (second is None or top_score - second_score >= 20):
+            return top
+        candidate_year = top.get("year")
+        if isinstance(candidate_year, int) and candidate_year == year and top_similarity >= 0.92 and (second is None or top_similarity - second_similarity >= 0.08):
+            return top
+        return None
+
+    if bool(top.get("match_exact")):
+        if top_score >= 110 and (second is None or top_score - second_score >= 20):
+            return top
+        return None
+
+    # Typo tolerance is deliberately narrow: long-ish titles only, >=92%
+    # similarity, and a clear gap from the runner-up. This catches Tale/Tail
+    # without turning broad stems such as 'Ace Ventura' into a guessed sequel.
+    if len(_normalized_title(str(top.get("title") or ""))) >= 10 and top_similarity >= 0.92:
+        if second is None or top_similarity - second_similarity >= 0.08:
+            return top
+    return None
+
 def rank_tmdb_results(query_title: str, query_year: int | None, results: Iterable[Mapping]) -> list[dict]:
     query_norm = _normalized_title(query_title)
     query_numbers = _number_tokens(query_title)

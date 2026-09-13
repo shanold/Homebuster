@@ -237,6 +237,13 @@ https://github.com/TheMarveled/movie-cataloguer
 Released under the MIT License. See `LICENSE`.
 
 
+
+## v0.3.18 smarter legacy-title matching
+
+Identify and **Match / Repair Movies** now try multiple conservative TMDb search candidates instead of relying on one strictly parsed title. Old library entries can recover from combined media wording, trailing parenthetical notes, generic edition labels, collection labels, and very small title typos. Candidate cleanup never rewrites the stored title by itself; a title changes only after a TMDb match is selected or accepted at high confidence. Bulk matching remains conservative and leaves ambiguous remakes/box sets unmatched.
+
+Examples now handled for search include `Beauty and the beast, DVD and Blu-ray` -> `Beauty and the beast`, `Bambi Diamond Edition` -> `Bambi`, and `An American Tale(Fievel)` -> `An American Tale`.
+
 ## v0.3.17 matching cleanup
 
 The web **Identify** and **Match / Repair Movies** flows now run unmatched legacy titles through the same conservative barcode-title parser used by the scanner before querying TMDb. The stored title is not changed unless a match is accepted. This is a server-only change; the Android companion remains v0.3.16.

@@ -28,6 +28,8 @@
 (() => {
   const total = {{ total|int }};
   const endpoint = {{ url_for('catalog.match_repair_batch', library_id=library.id)|tojson }};
+  const reviewUrl = {{ url_for('catalog.match_repair_review', library_id=library.id)|tojson }};
+  const libraryUrl = {{ url_for('catalog.library_home', library_id=library.id)|tojson }};
   const csrf = {{ csrf_token()|tojson }};
   const button = document.getElementById('start-repair');
   const status = document.getElementById('repair-status');
@@ -36,6 +38,7 @@
   const totals = {processed: 0, matched: 0, refreshed: 0, metadata: 0, unmatched: 0, failed: 0};
   let afterId = 0;
   let running = false;
+  let completionTarget = null;
 
   function render() {
     count.textContent = `${totals.processed} / ${total}`;
@@ -76,8 +79,14 @@
     render();
     if (data.done) {
       running = false;
-      button.disabled = true;
-      button.textContent = 'Complete';
+      button.disabled = false;
+      if (totals.unmatched > 0) {
+        button.textContent = `Review ${totals.unmatched} Movies`;
+        completionTarget = reviewUrl;
+      } else {
+        button.textContent = 'Back to Library';
+        completionTarget = libraryUrl;
+      }
       status.textContent = `Complete: ${totals.matched} matched, ${totals.refreshed} refreshed, ${totals.metadata} copy metadata repairs, ${totals.unmatched} need review, ${totals.failed} failed.`;
       return;
     }
@@ -85,6 +94,7 @@
   }
 
   button.addEventListener('click', () => {
+    if (completionTarget) { window.location.href = completionTarget; return; }
     if (running) return;
     running = true;
     button.disabled = true;

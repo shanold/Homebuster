@@ -17,4 +17,4 @@ def test_v0316_source_contract():
     assert "Match / Repair Movies" in catalogue
     assert "movie.copy_count > 1" in catalogue
     assert "Physical copies" in detail
-    assert 'APP_VERSION = "0.3.19"' in config
+    assert 'APP_VERSION = "0.3.21"' in config

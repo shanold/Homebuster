@@ -24,9 +24,14 @@ data class CollectionItem(val id: Int, @SerializedName("library_id") val library
 data class CollectionsResponse(val collections: List<CollectionItem>)
 data class Loan(val id: Int, @SerializedName("movie_id") val movieId: Int, val title: String, val borrower: String, @SerializedName("loaned_at") val loanedAt: String, @SerializedName("returned_at") val returnedAt: String?, val notes: String)
 data class LoansResponse(val loans: List<Loan>)
+data class CopyMetadata(
+    val formats: List<String> = emptyList(), val format: String? = null, val edition: String? = null,
+    val language: String? = null, val region: String? = null, @SerializedName("disc_count") val discCount: Int? = null
+)
 data class TmdbResult(
     @SerializedName("tmdb_id") val tmdbId: Int, val title: String, val year: Int?, val overview: String,
-    @SerializedName("poster_path") val posterPath: String?, @SerializedName("match_score") val matchScore: Int? = null
+    @SerializedName("poster_path") val posterPath: String?, @SerializedName("match_score") val matchScore: Int? = null,
+    @SerializedName("copy_metadata") val copyMetadata: CopyMetadata? = null
 )
 data class TmdbResponse(val results: List<TmdbResult>)
 data class BarcodeProduct(@SerializedName("product_title") val productTitle: String?, @SerializedName("search_title") val searchTitle: String?)

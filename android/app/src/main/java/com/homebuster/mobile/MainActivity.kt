@@ -441,6 +441,7 @@ private fun BarcodeResultScreen(api: HomebusterApi, token: String, upc: String, 
                                 scope.launch {
                                     try {
                                         val lookup = r.lookup
+                                        val selectedMetadata = match.copyMetadata
                                         val response = api.addMovie(
                                             "Bearer $token",
                                             AddMovieRequest(
@@ -449,12 +450,13 @@ private fun BarcodeResultScreen(api: HomebusterApi, token: String, upc: String, 
                                                 year = match.year,
                                                 overview = match.overview,
                                                 posterPath = match.posterPath,
-                                                format = lookup?.format?.takeIf { it.isNotBlank() } ?: "Unknown",
+                                                format = selectedMetadata?.format?.takeIf { it.isNotBlank() }
+                                                    ?: lookup?.format?.takeIf { it.isNotBlank() } ?: "Unknown",
                                                 upc = r.upc ?: upc,
-                                                version = lookup?.edition,
-                                                language = lookup?.language,
-                                                region = lookup?.region,
-                                                discCount = lookup?.discCount
+                                                version = selectedMetadata?.edition ?: lookup?.edition,
+                                                language = selectedMetadata?.language ?: lookup?.language,
+                                                region = selectedMetadata?.region ?: lookup?.region,
+                                                discCount = selectedMetadata?.discCount ?: lookup?.discCount
                                             )
                                         )
                                         addedMovie = response["movie"]

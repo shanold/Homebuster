@@ -12,6 +12,7 @@ from .db import get_db
 from .permissions import require_library_role
 from .barcode_parser import (
     generate_movie_title_candidates,
+    search_ready_movie_title_candidates,
     high_confidence_tmdb_match,
     infer_legacy_title_year,
     infer_copy_metadata_from_legacy_title,
@@ -67,7 +68,7 @@ def _match_queries_for_movie(movie):
     """
     raw_title = (movie["title"] or "").strip()
     parsed = parse_barcode_product_title(raw_title)
-    query_titles = generate_movie_title_candidates(raw_title) or [raw_title]
+    query_titles = search_ready_movie_title_candidates(raw_title) or [raw_title]
     query_year = movie["year"] if movie["year"] not in (None, "") else infer_legacy_title_year(raw_title)
     return query_titles, query_year
 
@@ -789,6 +790,75 @@ def match_repair_batch(library_id, library, role):
         "SELECT 1 FROM movies WHERE library_id=? AND id>? LIMIT 1", (library_id, next_after_id)
     ).fetchone() is not None
     return jsonify({**counts, "after_id": next_after_id, "done": not more})
+
+
+@bp.route("/libraries/<int:library_id>/match-repair/review", methods=["GET", "POST"])
+@login_required
+@require_library_role("editor")
+def match_repair_review(library_id, library, role):
+    if not current_app.config.get("TMDB_API_KEY"):
+        flash("TMDB_API_KEY is not configured.", "warning")
+        return redirect(url_for("catalog.library_home", library_id=library_id))
+
+    db = get_db()
+    if request.method == "POST":
+        movie_id = _int_or_none(request.form.get("movie_id"))
+        tmdb_id = _int_or_none(request.form.get("tmdb_id"))
+        if not movie_id or not tmdb_id:
+            abort(400)
+        movie = _get_movie(library_id, movie_id)
+        try:
+            data = _tmdb_details(tmdb_id)
+        except requests.RequestException:
+            flash("TMDb lookup failed. Try again later.", "error")
+            return redirect(url_for("catalog.match_repair_review", library_id=library_id, after_id=movie_id))
+        if not data:
+            flash("TMDb lookup failed. Try again later.", "error")
+            return redirect(url_for("catalog.match_repair_review", library_id=library_id, after_id=movie_id))
+        metadata_changed, _ = _apply_identified_movie(db, movie, data, tmdb_id)
+        db.commit()
+        message = f"Matched {movie['title']} with TMDb."
+        if metadata_changed:
+            message += " Copy metadata was recovered too."
+        flash(message, "success")
+        return redirect(url_for("catalog.match_repair_review", library_id=library_id, after_id=movie_id))
+
+    try:
+        after_id = max(0, int(request.args.get("after_id") or 0))
+    except (TypeError, ValueError):
+        after_id = 0
+
+    remaining_review = db.execute(
+        "SELECT COUNT(*) AS n FROM movies WHERE library_id=? AND tmdb_id IS NULL",
+        (library_id,),
+    ).fetchone()["n"]
+    movie = db.execute(
+        "SELECT * FROM movies WHERE library_id=? AND tmdb_id IS NULL AND id>? ORDER BY id LIMIT 1",
+        (library_id, after_id),
+    ).fetchone()
+
+    if not movie:
+        return render_template(
+            "match_repair_review.html",
+            library=library, role=role, movie=None, results=[], poster_size=current_app.config.get("TMDB_POSTER_SIZE", "w342"),
+            remaining_review=remaining_review, after_id=after_id,
+        )
+
+    query_titles, query_year = _match_queries_for_movie(movie)
+    try:
+        results = _tmdb_search_candidates(query_titles, query_year, max_searches=MAX_MATCH_SEARCHES)
+    except requests.RequestException:
+        results = []
+        flash("TMDb search failed for this movie. You can skip it and continue.", "error")
+    for result in results:
+        result["metadata_preview"] = infer_copy_metadata_from_legacy_title(
+            movie["title"], result.get("title") or movie["title"]
+        )
+    return render_template(
+        "match_repair_review.html",
+        library=library, role=role, movie=movie, results=results, poster_size=current_app.config.get("TMDB_POSTER_SIZE", "w342"),
+        remaining_review=remaining_review, after_id=after_id,
+    )
 
 
 def _tmdb_search(title: str, year: str | None = None):

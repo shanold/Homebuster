@@ -19,4 +19,4 @@ def test_identify_and_bulk_match_use_barcode_title_parser():
 
 
 def test_v0317_server_version():
-    assert 'APP_VERSION = "0.3.19"' in CONFIG.read_text()
+    assert 'APP_VERSION = "0.3.21"' in CONFIG.read_text()

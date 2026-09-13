@@ -14,7 +14,7 @@ from typing import Iterable, Mapping
 
 _FORMAT_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"4K(?:\s+Ultra\s+HD|\s+UHD)?|Ultra\s+HD|UHD", re.I), "4K UHD"),
-    (re.compile(r"Blu[- ]?ray", re.I), "Blu-ray"),
+    (re.compile(r"Blue?[- ]?ray", re.I), "Blu-ray"),
     (re.compile(r"HD[- ]?DVD", re.I), "HD DVD"),
     (re.compile(r"DVD", re.I), "DVD"),
     (re.compile(r"VHS", re.I), "VHS"),
@@ -394,7 +394,7 @@ def parse_barcode_product_title(raw_title: str, distributor_hint: str | None = N
     value = raw
     formats: list[str] = []
     format_order: list[str] = []
-    for match in re.finditer(r"4K(?:\s+Ultra\s+HD|\s+UHD)?|Ultra\s+HD|UHD|Blu[- ]?ray|HD[- ]?DVD|DVD|VHS", raw, re.I):
+    for match in re.finditer(r"4K(?:\s+Ultra\s+HD|\s+UHD)?|Ultra\s+HD|UHD|Blue?[- ]?ray|HD[- ]?DVD|DVD|VHS", raw, re.I):
         canonical = _canonical_format(match.group(0))
         if canonical and canonical not in format_order:
             format_order.append(canonical)
@@ -804,6 +804,28 @@ def generate_movie_title_candidates(raw_title: str) -> list[str]:
             _append_unique_candidate(candidates, " ".join(words[:-trim]))
 
     return candidates[:12]
+
+
+def _contains_strong_copy_metadata(value: str) -> bool:
+    text = value or ""
+    return bool(
+        _EDITION_PATTERN.search(text)
+        or _DISC_PATTERN.search(text)
+        or _REGION_PATTERN.search(text)
+        or _PACKAGING_PATTERN.search(text)
+        or _VIDEO_STANDARD_PATTERN.search(text)
+        or any(pattern.search(text) for pattern, _ in _FORMAT_PATTERNS)
+    )
+
+
+def search_ready_movie_title_candidates(raw_title: str) -> list[str]:
+    """Prioritize shared title candidates that no longer contain strong copy metadata."""
+    candidates = generate_movie_title_candidates(raw_title)
+    if not candidates:
+        return []
+    clean = [value for value in candidates if not _contains_strong_copy_metadata(value)]
+    noisy = [value for value in candidates if _contains_strong_copy_metadata(value)]
+    return clean + noisy
 
 def high_confidence_tmdb_match(query_titles: Iterable[str], query_year: int | None, results: Iterable[Mapping]) -> dict | None:
     """Choose only a decisive TMDb match across multiple search candidates."""

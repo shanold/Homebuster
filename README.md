@@ -238,6 +238,16 @@ Released under the MIT License. See `LICENSE`.
 
 
 
+
+
+## v0.3.21 review queue
+
+Bulk Match / Repair now turns its completion action into a real review workflow. If automatic matching leaves movies needing review, the completion button opens a server-derived queue of still-unmatched movies. Each movie can be matched against TMDb using the same smart candidate/metadata pipeline, skipped for the current pass, and the queue automatically advances after a selection. Skipped movies remain unmatched and can be reviewed again later. This is a server-side update; Android remains v0.3.20 (versionCode 15).
+
+## v0.3.20 scanner shared matching pipeline
+
+The Android barcode scanner now uses the same search-ready title candidate pipeline as single-movie Identify and bulk Match / Repair. Strong physical-copy metadata such as format, disc count, edition, region, and packaging is removed from TMDb search candidates even when it appears in mixed order. After TMDb results are returned, Homebuster anchors metadata recovery to each result's canonical title and Android saves the metadata belonging to the specific result selected by the user. Common catalog spelling `Blue-ray` is normalized to `Blu-ray`. Android is v0.3.20 (versionCode 15), so this release requires rebuilding the signed release APK with the existing Homebuster keystore.
+
 ## v0.3.19 canonical metadata repair and visible bulk progress
 
 Identify and **Match / Repair Movies** now use the TMDb-confirmed canonical movie title as an anchor to recover physical-copy metadata from noisy legacy names. Format, Edition, Language, Region, and Disc Count are filled into their dedicated fields only when the existing value is blank or `Unknown`; manual corrections are preserved. Metadata can appear in mixed order, and disc counts accept both numeric and word forms such as `2 Disc` and `two disk`.
@@ -254,7 +264,7 @@ Examples now handled for search include `Beauty and the beast, DVD and Blu-ray` 
 
 The web **Identify** and **Match / Repair Movies** flows now run unmatched legacy titles through the same conservative barcode-title parser used by the scanner before querying TMDb. The stored title is not changed unless a match is accepted. This is a server-only change; the Android companion remains v0.3.16.
 
-## Android companion app (v0.3.16)
+## Android companion app (v0.3.20)
 
 - Android respects system status/navigation bar safe areas on modern Android.
 - Grouped movie posters collapse multiple physical formats of the same title into one library card while keeping copies separate in details.

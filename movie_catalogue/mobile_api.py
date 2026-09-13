@@ -9,7 +9,13 @@ from werkzeug.security import check_password_hash
 
 from .db import get_db
 from .integrations import barcode_product_lookup, tmdb_search
-from .barcode_parser import best_match_score, rank_tmdb_results
+from .barcode_parser import (
+    best_match_score,
+    generate_movie_title_candidates,
+    search_ready_movie_title_candidates,
+    infer_copy_metadata_from_legacy_title,
+    rank_tmdb_results,
+)
 
 bp = Blueprint("mobile_api", __name__, url_prefix="/api/v1")
 
@@ -442,23 +448,24 @@ def tmdb_lookup():
 
 
 def _barcode_tmdb_matches(product: dict) -> tuple[list[dict], list[dict]]:
-    """Run progressively broader TMDb searches and keep the best candidates."""
-    title = str(product.get("search_title") or product.get("product_title") or "").strip()
-    fallback = str(product.get("fallback_title") or "").strip()
+    """Use the same candidate generator as web Identify/Repair for scanner TMDb searches."""
+    raw_title = str(product.get("product_title") or "").strip()
     year = product.get("search_year")
 
     queries: list[tuple[str, int | None]] = []
-    for candidate in ((title, year), (title, None), (fallback, year), (fallback, None)):
-        if not candidate[0]:
+    candidates = search_ready_movie_title_candidates(raw_title)
+    for value in (product.get("search_title"), *candidates, product.get("fallback_title")):
+        title = str(value or "").strip()
+        if not title:
             continue
-        key = (candidate[0].casefold(), candidate[1])
+        key = (title.casefold(), year)
         if any((q.casefold(), y) == key for q, y in queries):
             continue
-        queries.append(candidate)
+        queries.append((title, year))
 
     merged: dict[object, dict] = {}
     attempts: list[dict] = []
-    for query_title, query_year in queries:
+    for query_title, query_year in queries[:3]:
         raw = tmdb_search(query_title, query_year)
         ranked = rank_tmdb_results(query_title, query_year, raw)
         attempts.append({
@@ -472,16 +479,16 @@ def _barcode_tmdb_matches(product: dict) -> tuple[list[dict], list[dict]]:
             current = merged.get(key)
             if current is None or int(item.get("match_score") or 0) > int(current.get("match_score") or 0):
                 merged[key] = item
-        # Exact/near-exact title matches score over this threshold.  Once one
-        # exists, broader searches add noise and extra TMDb requests.
         if best_match_score(merged.values()) >= 105:
             break
 
     results = sorted(
         merged.values(),
         key=lambda item: (-int(item.get("match_score") or 0), str(item.get("title") or "").lower()),
-    )
-    return results[:20], attempts
+    )[:20]
+    for item in results:
+        item["copy_metadata"] = infer_copy_metadata_from_legacy_title(raw_title, item.get("title") or "")
+    return results, attempts
 
 
 @bp.get("/barcodes/<upc>")
@@ -523,20 +530,21 @@ def barcode_lookup(upc):
     except Exception as exc:
         current_app.logger.warning("TMDb barcode match lookup failed: %s", exc)
         matches, attempts = [], []
+    best_metadata = (matches[0].get("copy_metadata") if matches else None) or {}
     return jsonify({
         "status": "product_match",
         "upc": upc,
         "product": product,
         "lookup": {
-            "title": search_title,
+            "title": attempts[-1]["title"] if attempts else search_title,
             "fallback_title": product.get("fallback_title"),
             "year": search_year,
-            "formats": product.get("detected_formats") or [],
-            "format": product.get("detected_format"),
-            "edition": product.get("detected_edition"),
-            "language": product.get("detected_language"),
-            "region": product.get("detected_region"),
-            "disc_count": product.get("detected_disc_count"),
+            "formats": list(best_metadata.get("formats") or product.get("detected_formats") or []),
+            "format": best_metadata.get("format") or product.get("detected_format"),
+            "edition": best_metadata.get("edition") or product.get("detected_edition"),
+            "language": best_metadata.get("language") or product.get("detected_language"),
+            "region": best_metadata.get("region") or product.get("detected_region"),
+            "disc_count": best_metadata.get("disc_count") or product.get("detected_disc_count"),
             "distributor": product.get("detected_distributor"),
             "category": product.get("detected_category"),
             "attempts": attempts,

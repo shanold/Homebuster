@@ -18,6 +18,6 @@ def test_v0318_catalog_uses_multi_candidate_legacy_matching():
 def test_v0318_server_version_and_android_stays_release_compatible():
     config = (ROOT / "movie_catalogue" / "config.py").read_text()
     gradle = (ROOT / "android" / "app" / "build.gradle.kts").read_text()
-    assert 'APP_VERSION = "0.3.19"' in config
-    assert 'versionName = "0.3.16"' in gradle
-    assert 'versionCode = 14' in gradle
+    assert 'APP_VERSION = "0.3.21"' in config
+    assert 'versionName = "0.3.20"' in gradle
+    assert 'versionCode = 15' in gradle

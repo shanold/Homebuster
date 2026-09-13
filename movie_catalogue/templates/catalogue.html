@@ -15,6 +15,7 @@
   {% if role != 'viewer' %}<a class="button primary" href="{{ url_for('catalog.movie_new', library_id=library.id) }}">+ Add Movie</a>{% endif %}
   <a class="button" href="{{ url_for('catalog.export_csv', library_id=library.id) }}">Export CSV</a>
   {% if role != 'viewer' %}<a class="button" href="{{ url_for('catalog.match_repair_page', library_id=library.id) }}">Match / Repair Movies</a>{% endif %}
+  {% if role != 'viewer' and pending_review_count %}<a class="button" href="{{ url_for('catalog.match_repair_review', library_id=library.id) }}">Review unmatched movies ({{ pending_review_count }})</a>{% endif %}
   {% if role != 'viewer' %}<form method="post" enctype="multipart/form-data" action="{{ url_for('catalog.import_csv', library_id=library.id) }}" class="inline import-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="file" name="csv_file" accept=".csv" required><button>Import CSV</button></form>{% endif %}
 </div>
 <div class="movie-grid">

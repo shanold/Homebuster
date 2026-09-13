@@ -240,9 +240,13 @@ Released under the MIT License. See `LICENSE`.
 
 
 
-## v0.3.21 review queue
+## v0.3.22 persistent review queue
 
-Bulk Match / Repair now turns its completion action into a real review workflow. If automatic matching leaves movies needing review, the completion button opens a server-derived queue of still-unmatched movies. Each movie can be matched against TMDb using the same smart candidate/metadata pipeline, skipped for the current pass, and the queue automatically advances after a selection. Skipped movies remain unmatched and can be reviewed again later. This is a server-side update; Android remains v0.3.20 (versionCode 15).
+Bulk Match / Repair now stores a persistent `review_pending` flag for movies that could not be matched automatically. The Library page shows **Review unmatched movies (N)** whenever the library has pending review work, so you can leave and return later without running Match / Repair again. **Skip for now** keeps the movie in the queue, a successful TMDb match clears it automatically, and **Dismiss from review** removes an intentionally unmatched movie from the queue. Existing databases add the new flag automatically on startup. This is a server-side update; Android remains v0.3.20 (versionCode 15).
+
+## v0.3.21 review workflow
+
+Bulk Match / Repair turns its completion action into a real review workflow. If automatic matching leaves movies needing review, the completion button opens a review queue. Each movie can be matched against TMDb using the same smart candidate/metadata pipeline, skipped for the current pass, and the queue automatically advances after a selection.
 
 ## v0.3.20 scanner shared matching pipeline
 

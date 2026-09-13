@@ -125,6 +125,7 @@ def _create_catalog_tables(db: sqlite3.Connection) -> None:
             language TEXT,
             region TEXT,
             disc_count INTEGER,
+            review_pending INTEGER NOT NULL DEFAULT 0,
             notes TEXT,
             shelf_id INTEGER,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -174,6 +175,13 @@ def _create_catalog_tables(db: sqlite3.Connection) -> None:
             ON loans(movie_id) WHERE returned_date IS NULL;
         """
     )
+
+
+def _ensure_catalog_columns(db: sqlite3.Connection) -> None:
+    """Add catalog columns introduced after the original multi-library schema."""
+    movie_cols = table_columns(db, "movies")
+    if movie_cols and "review_pending" not in movie_cols:
+        db.execute("ALTER TABLE movies ADD COLUMN review_pending INTEGER NOT NULL DEFAULT 0")
 
 
 def _bootstrap_admin(db: sqlite3.Connection) -> None:
@@ -320,6 +328,7 @@ def initialize_database() -> None:
     _bootstrap_admin(db)
     _migrate_legacy(db)
     _create_catalog_tables(db)
+    _ensure_catalog_columns(db)
     db.commit()
 
 

@@ -13,6 +13,12 @@
   <p class="muted">{{ movie.year or 'Year unknown' }} · {{ movie.format or 'Format unknown' }}{% if movie.version %} · {{ movie.version }}{% endif %}</p>
   <div class="toolbar">
     <a class="button" href="{{ url_for('catalog.match_repair_review', library_id=library.id, after_id=movie.id) }}">Skip for now</a>
+    <form method="post" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="movie_id" value="{{ movie.id }}">
+      <input type="hidden" name="action" value="dismiss">
+      <button type="submit">Dismiss from review</button>
+    </form>
     <a class="button" href="{{ url_for('catalog.library_home', library_id=library.id) }}">Leave Review</a>
   </div>
 </section>
@@ -41,6 +47,7 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="movie_id" value="{{ movie.id }}">
         <input type="hidden" name="tmdb_id" value="{{ result.id }}">
+        <input type="hidden" name="action" value="match">
         <button class="primary">Use this match</button>
       </form>
     </div>
@@ -53,7 +60,7 @@
 <section class="panel narrow">
   {% if remaining_review %}
     <h3>Review pass complete</h3>
-    <p>{{ remaining_review }} movie{% if remaining_review != 1 %}s{% endif %} still need review. These were skipped or had no usable TMDb results.</p>
+    <p>{{ remaining_review }} movie{% if remaining_review != 1 %}s{% endif %} still need review. Skipped movies stay on this list until matched or dismissed.</p>
     <div class="toolbar">
       <a class="button primary" href="{{ url_for('catalog.match_repair_review', library_id=library.id) }}">Review remaining movies again</a>
       <a class="button" href="{{ url_for('catalog.library_home', library_id=library.id) }}">Back to Library</a>

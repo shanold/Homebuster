@@ -166,7 +166,7 @@ def _apply_identified_movie(db, movie, data, tmdb_id):
     year = release[:4] if len(release) >= 4 and release[:4].isdigit() else movie["year"]
     db.execute(
         """UPDATE movies
-           SET title=?,year=?,poster_path=?,tmdb_id=?,format=?,version=?,language=?,region=?,disc_count=?,updated_at=CURRENT_TIMESTAMP
+           SET title=?,year=?,poster_path=?,tmdb_id=?,format=?,version=?,language=?,region=?,disc_count=?,review_pending=0,updated_at=CURRENT_TIMESTAMP
            WHERE id=? AND library_id=?""",
         (
             canonical_title, year, poster or movie["poster_path"], tmdb_id,
@@ -315,11 +315,14 @@ def library_home(library_id, library, role):
     ).fetchall()
     formats = [r[0] for r in db.execute("SELECT DISTINCT format FROM movies WHERE library_id=? AND format IS NOT NULL AND format<>'' ORDER BY format", (library_id,)).fetchall()]
     active_loans = db.execute("SELECT COUNT(*) FROM loans WHERE library_id=? AND returned_date IS NULL", (library_id,)).fetchone()[0]
+    pending_review_count = db.execute(
+        "SELECT COUNT(*) FROM movies WHERE library_id=? AND review_pending=1", (library_id,)
+    ).fetchone()[0]
     pages = max(1, (total + page_size - 1) // page_size)
     return render_template(
         "catalogue.html", library=library, role=role, movies=movies, shelves=shelves,
         collections=collections, formats=formats, active_loans=active_loans,
-        total=total, page=page, pages=pages,
+        pending_review_count=pending_review_count, total=total, page=page, pages=pages,
     )
 
 
@@ -767,6 +770,10 @@ def match_repair_batch(library_id, library, role):
                 query_titles, query_year = _match_queries_for_movie(movie)
                 choice = _find_high_confidence_match(query_titles, query_year, search_cache)
                 if not choice:
+                    db.execute(
+                        "UPDATE movies SET review_pending=1, updated_at=CURRENT_TIMESTAMP WHERE id=? AND library_id=?",
+                        (movie["id"], library_id),
+                    )
                     counts["unmatched"] += 1
                     continue
                 tmdb_id = choice["tmdb_id"]
@@ -803,10 +810,22 @@ def match_repair_review(library_id, library, role):
     db = get_db()
     if request.method == "POST":
         movie_id = _int_or_none(request.form.get("movie_id"))
-        tmdb_id = _int_or_none(request.form.get("tmdb_id"))
-        if not movie_id or not tmdb_id:
+        if not movie_id:
             abort(400)
         movie = _get_movie(library_id, movie_id)
+        action = (request.form.get("action") or "match").strip().lower()
+        if action == "dismiss":
+            db.execute(
+                "UPDATE movies SET review_pending=0, updated_at=CURRENT_TIMESTAMP WHERE id=? AND library_id=?",
+                (movie_id, library_id),
+            )
+            db.commit()
+            flash(f"Removed {movie['title']} from the review list.", "success")
+            return redirect(url_for("catalog.match_repair_review", library_id=library_id, after_id=movie_id))
+
+        tmdb_id = _int_or_none(request.form.get("tmdb_id"))
+        if not tmdb_id:
+            abort(400)
         try:
             data = _tmdb_details(tmdb_id)
         except requests.RequestException:
@@ -829,11 +848,11 @@ def match_repair_review(library_id, library, role):
         after_id = 0
 
     remaining_review = db.execute(
-        "SELECT COUNT(*) AS n FROM movies WHERE library_id=? AND tmdb_id IS NULL",
+        "SELECT COUNT(*) AS n FROM movies WHERE library_id=? AND review_pending=1",
         (library_id,),
     ).fetchone()["n"]
     movie = db.execute(
-        "SELECT * FROM movies WHERE library_id=? AND tmdb_id IS NULL AND id>? ORDER BY id LIMIT 1",
+        "SELECT * FROM movies WHERE library_id=? AND review_pending=1 AND id>? ORDER BY id LIMIT 1",
         (library_id, after_id),
     ).fetchone()
 

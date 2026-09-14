@@ -74,11 +74,14 @@
 
 <dialog id="shelf-case-modal" class="case-preview-dialog">
   <button type="button" class="case-preview-close" aria-label="Close preview">×</button>
-  <div class="case-preview-shell">
-    <div id="case-preview-format" class="case-format-band case-format-logos" aria-label="Media format">Media</div>
-    <div class="case-preview-art">
-      <img id="case-preview-poster" alt="" hidden>
-      <div id="case-preview-placeholder" class="case-preview-placeholder">🎬</div>
+  <div id="case-preview-shell" class="case-preview-shell case-style-bluray" data-case-format="bluray">
+    <div class="case-preview-plastic" aria-hidden="true"></div>
+    <div id="case-preview-format" class="case-format-logos case-preview-logo" aria-label="Media format">Media</div>
+    <div class="case-preview-insert">
+      <div class="case-preview-art">
+        <img id="case-preview-poster" alt="" hidden>
+        <div id="case-preview-placeholder" class="case-preview-placeholder">🎬</div>
+      </div>
     </div>
   </div>
   <div class="case-preview-info">
@@ -215,6 +218,7 @@
   if (shelfNext) shelfNext.addEventListener('click', () => { shelfPage += 1; renderShelfPage(); });
 
   const modal = document.getElementById('shelf-case-modal');
+  const modalShell = document.getElementById('case-preview-shell');
   const modalPoster = document.getElementById('case-preview-poster');
   const modalPlaceholder = document.getElementById('case-preview-placeholder');
   const modalFormat = document.getElementById('case-preview-format');
@@ -231,6 +235,13 @@
   const renderFormatBadges = rawFormat => {
     const format = (rawFormat || '').trim();
     const normalized = format.toLowerCase().replace(/[–—]/g, '-');
+    const isUhd = /4k|ultra\s*hd|uhd/.test(normalized);
+    const isBluray = /blu[ -]?ray|blue[ -]?ray/.test(normalized);
+    const isDvd = /\bdvd\b/.test(normalized);
+    const caseStyle = isUhd ? 'uhd' : isBluray ? 'bluray' : isDvd ? 'dvd' : 'generic';
+    modalShell.classList.remove('case-style-bluray', 'case-style-dvd', 'case-style-uhd', 'case-style-generic');
+    modalShell.classList.add(`case-style-${caseStyle}`);
+    modalShell.dataset.caseFormat = caseStyle;
     const marks = [];
     if (/4k|ultra\s*hd|uhd/.test(normalized)) marks.push(FORMAT_LOGOS.uhd4k);
     if (/blu[ -]?ray|blue[ -]?ray/.test(normalized)) marks.push(FORMAT_LOGOS.bluray);

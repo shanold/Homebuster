@@ -34,6 +34,6 @@ assert "url_for('box_sets.export_csv'" in export_html
 assert 'Export Movies CSV' in export_html
 assert 'Export Box Sets CSV' in export_html
 
-assert any(v in config_py for v in ('APP_VERSION = "0.3.33"', 'APP_VERSION = "0.3.34"','APP_VERSION = "0.3.35"', 'APP_VERSION = "0.3.36"'))
+assert any(v in config_py for v in ('APP_VERSION = "0.3.33"', 'APP_VERSION = "0.3.34"','APP_VERSION = "0.3.35"', 'APP_VERSION = "0.3.36"', 'APP_VERSION = "0.3.37"'))
 assert '## v0.3.33' in readme
 print('v0.3.33 shelf toggle/export page checks passed')

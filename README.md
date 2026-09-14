@@ -394,3 +394,7 @@ Blu-ray/DVD combo packs remain a single physical inventory copy. Common scan spe
 - Shelf View now shows four visual rows per page. The Movies per row slider dynamically sets the page size to four times the effective row density.
 - List View now shows 50 movies per page. Both modes have Previous/Next controls and a page indicator.
 - Shelf cases are roughly 50% taller and both List and Shelf artwork treatments are brighter.
+
+
+## v0.3.37 — Physical media case preview
+Shelf View case previews now render the poster as an insert inside a molded-looking format-specific case: blue Blu-ray, dark DVD, black 4K UHD, with locally rendered media marks and combo-pack badges.

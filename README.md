@@ -382,6 +382,13 @@ Blu-ray/DVD combo packs remain a single physical inventory copy. Common scan spe
 - Brightens the poster-derived artwork in Shelf List View while keeping a stronger dark gradient behind title and metadata text.
 
 
+
+## v0.3.36 — Media-format symbols in Shelf View preview
+
+- Replaces the plain media-format text at the top of the clicked Shelf View case preview with locally rendered vector-style marks for DVD, Blu-ray Disc, and 4K Ultra HD.
+- Combo formats such as Blu-ray + DVD display both marks side by side.
+- Unknown/custom formats retain a readable text fallback.
+
 ## v0.3.35 — Shelf pagination, taller cases, brighter artwork
 
 - Shelf View now shows four visual rows per page. The Movies per row slider dynamically sets the page size to four times the effective row density.

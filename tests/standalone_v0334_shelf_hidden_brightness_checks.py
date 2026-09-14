@@ -19,5 +19,5 @@ m2 = re.search(r'\.shelf-list-card::after\{[^}]*background:linear-gradient\(90de
 assert m2, 'shelf list overlay gradient not found'
 assert float(m2.group(1)) <= 0.80, f'far-right overlay still too dark: alpha={m2.group(1)}'
 
-assert 'APP_VERSION = "0.3.34"' in config_py
+assert any(v in config_py for v in ('APP_VERSION = "0.3.34"', 'APP_VERSION = "0.3.35"'))
 print('v0.3.34 shelf hidden/brightness checks passed')

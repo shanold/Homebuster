@@ -36,6 +36,11 @@
   <div class="empty"><h2>This shelf is empty</h2><p>{% if role != 'viewer' %}Use Add movies to shelf to place titles here.{% endif %}</p></div>
 {% endfor %}
 </div>
+<div id="shelf-list-pagination" class="shelf-pagination" aria-label="List view pages">
+  <button type="button" data-page-action="list-prev">Previous</button>
+  <span id="shelf-list-page-label">Page 1 of 1</span>
+  <button type="button" data-page-action="list-next">Next</button>
+</div>
 
 <div id="shelf-visual-view" class="visual-shelf" hidden>
   {% if movies %}
@@ -61,6 +66,11 @@
   <div class="empty"><h2>This shelf is empty</h2><p>{% if role != 'viewer' %}Use Add movies to shelf to place titles here.{% endif %}</p></div>
   {% endif %}
 </div>
+<div id="shelf-visual-pagination" class="shelf-pagination" aria-label="Shelf view pages" hidden>
+  <button type="button" data-page-action="shelf-prev">Previous</button>
+  <span id="shelf-visual-page-label">Page 1 of 1</span>
+  <button type="button" data-page-action="shelf-next">Next</button>
+</div>
 
 <dialog id="shelf-case-modal" class="case-preview-dialog">
   <button type="button" class="case-preview-close" aria-label="Close preview">×</button>
@@ -82,12 +92,26 @@
 (() => {
   const STORAGE_VIEW = 'Homebuster.shelfViewMode';
   const STORAGE_DENSITY = 'Homebuster.shelfDensity';
+  const LIST_PAGE_SIZE = 50;
+  const SHELF_ROWS_PER_PAGE = 4;
   const listView = document.getElementById('shelf-list-view');
   const shelfView = document.getElementById('shelf-visual-view');
   const shelfRow = shelfView ? shelfView.querySelector('.shelf-row') : null;
   const density = document.getElementById('shelf-density');
   const densityValue = document.getElementById('shelf-density-value');
   const viewButtons = Array.from(document.querySelectorAll('[data-shelf-view]'));
+  const listItems = Array.from(document.querySelectorAll('#shelf-list-view .shelf-list-card'));
+  const shelfItems = Array.from(document.querySelectorAll('#shelf-visual-view .shelf-case'));
+  const listPager = document.getElementById('shelf-list-pagination');
+  const shelfPager = document.getElementById('shelf-visual-pagination');
+  const listPageLabel = document.getElementById('shelf-list-page-label');
+  const shelfPageLabel = document.getElementById('shelf-visual-page-label');
+  const listPrev = document.querySelector('[data-page-action="list-prev"]');
+  const listNext = document.querySelector('[data-page-action="list-next"]');
+  const shelfPrev = document.querySelector('[data-page-action="shelf-prev"]');
+  const shelfNext = document.querySelector('[data-page-action="shelf-next"]');
+  let listPage = 1;
+  let shelfPage = 1;
 
   const storageGet = key => {
     try {
@@ -120,11 +144,37 @@
     return requested;
   };
 
+  const pageCount = (items, pageSize) => Math.max(1, Math.ceil(items.length / pageSize));
+
+  const renderPage = (items, page, pageSize, label, prev, next) => {
+    const pages = pageCount(items, pageSize);
+    const current = Math.max(1, Math.min(page, pages));
+    const start = (current - 1) * pageSize;
+    const end = start + pageSize;
+    items.forEach((item, index) => { item.hidden = index < start || index >= end; });
+    if (label) label.textContent = `Page ${current} of ${pages}`;
+    if (prev) prev.disabled = current <= 1;
+    if (next) next.disabled = current >= pages;
+    return current;
+  };
+
+  const renderListPage = () => {
+    listPage = renderPage(listItems, listPage, LIST_PAGE_SIZE, listPageLabel, listPrev, listNext);
+  };
+
+  const renderShelfPage = () => {
+    const columns = effectiveColumns(Number(density.value) || 28);
+    const pageSize = columns * SHELF_ROWS_PER_PAGE;
+    shelfPage = renderPage(shelfItems, shelfPage, pageSize, shelfPageLabel, shelfPrev, shelfNext);
+  };
+
   const applyDensity = raw => {
     const requested = Math.max(10, Math.min(40, Number(raw) || 28));
     density.value = requested;
     densityValue.textContent = requested;
-    if (shelfRow) shelfRow.style.setProperty('--shelf-columns', effectiveColumns(requested));
+    const columns = effectiveColumns(requested);
+    if (shelfRow) shelfRow.style.setProperty('--shelf-columns', columns);
+    renderShelfPage();
     return requested;
   };
 
@@ -132,6 +182,8 @@
     const next = mode === 'shelf' ? 'shelf' : 'list';
     listView.hidden = next !== 'list';
     shelfView.hidden = next !== 'shelf';
+    if (listPager) listPager.hidden = next !== 'list';
+    if (shelfPager) shelfPager.hidden = next !== 'shelf';
     document.body.classList.toggle('shelf-view-active', next === 'shelf');
     viewButtons.forEach(button => {
       const active = button.dataset.shelfView === next;
@@ -141,19 +193,26 @@
     return next;
   };
 
+  renderListPage();
   const savedDensity = storageGet(STORAGE_DENSITY) || density.value;
   applyDensity(savedDensity);
   applyView(storageGet(STORAGE_VIEW) || 'list');
 
   density.addEventListener('input', () => {
+    shelfPage = 1;
     const requested = applyDensity(density.value);
     storageSet(STORAGE_DENSITY, requested);
   });
-  window.addEventListener('resize', () => applyDensity(density.value));
+  window.addEventListener('resize', () => { shelfPage = 1; applyDensity(density.value); });
   viewButtons.forEach(button => button.addEventListener('click', () => {
     const mode = applyView(button.dataset.shelfView);
     storageSet(STORAGE_VIEW, mode);
   }));
+
+  if (listPrev) listPrev.addEventListener('click', () => { listPage -= 1; renderListPage(); });
+  if (listNext) listNext.addEventListener('click', () => { listPage += 1; renderListPage(); });
+  if (shelfPrev) shelfPrev.addEventListener('click', () => { shelfPage -= 1; renderShelfPage(); });
+  if (shelfNext) shelfNext.addEventListener('click', () => { shelfPage += 1; renderShelfPage(); });
 
   const modal = document.getElementById('shelf-case-modal');
   const modalPoster = document.getElementById('case-preview-poster');

@@ -42,6 +42,7 @@ const ids = {
 global.document = {
   getElementById(id){ return ids[id]; },
   querySelectorAll(sel){ if(sel === '[data-shelf-view]') return [listButton,shelfButton]; return []; },
+  querySelector(sel){ return null; },
   body: { classList: new ClassList() }
 };
 global.window = { innerWidth: 1200, addEventListener(){}};

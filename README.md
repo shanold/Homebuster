@@ -380,3 +380,10 @@ Blu-ray/DVD combo packs remain a single physical inventory copy. Common scan spe
 ## v0.3.34 — Shelf View display fix + brighter list artwork
 - Fixes the Shelf View toggle when component CSS such as `.list-cards { display: flex; }` overrides the browser default styling of the HTML `hidden` attribute. Homebuster now gives `[hidden]` an explicit `display: none !important` rule.
 - Brightens the poster-derived artwork in Shelf List View while keeping a stronger dark gradient behind title and metadata text.
+
+
+## v0.3.35 — Shelf pagination, taller cases, brighter artwork
+
+- Shelf View now shows four visual rows per page. The Movies per row slider dynamically sets the page size to four times the effective row density.
+- List View now shows 50 movies per page. Both modes have Previous/Next controls and a page indicator.
+- Shelf cases are roughly 50% taller and both List and Shelf artwork treatments are brighter.

@@ -339,3 +339,9 @@ The server API includes first-class box-set and TMDb Collection endpoints plus e
 - **Identify with TMDb** and persistent **Review unmatched titles** now include **Movie Collection / Box Set**, using TMDb Collection search without probing Movie/TV endpoints automatically.
 - Existing v0.3.27 lightweight box-set members and member-loan history are promoted idempotently on startup into first-class movie rows and standard movie loans.
 - Movie CSV now records parent box-set linkage; Box Set CSV continues to recreate the parent and its contained films.
+
+## v0.3.29 — Identify search QoL and combo-pack metadata
+
+Identify with TMDb now has an editable search-title field, matching the persistent review workflow, so an imported or scanned title can be corrected without leaving the Identify screen. TMDb movie/TV searches first use the stored year when available; if that constrained search returns no results, Homebuster retries the same cleaned title on the same endpoint without the year. This fallback is also used by bulk high-confidence matching. Movie Collection searches remain collection-only and do not fan out across endpoints.
+
+Blu-ray/DVD combo packs remain a single physical inventory copy. Common scan spellings such as `Blu-ray DVD`, `Blu-ray + DVD`, `Blu-ray/DVD`, `Blu Ray DVD`, and `Blue-ray DVD` normalize to format **Blu-ray + DVD**, while edition metadata such as **Diamond Edition** remains separate. Manual movie entry now includes **Blu-ray + DVD** in the Format selector. Android source/signing behavior is unchanged from v0.3.25 / versionCode 17.

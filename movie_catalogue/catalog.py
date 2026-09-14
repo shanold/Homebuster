@@ -100,6 +100,18 @@ def _match_queries_for_movie(movie, media_type=None):
     return query_titles, query_year
 
 
+def _tmdb_search_with_title_fallback(title, year=None, media_type="movie"):
+    """Search with structured year first, then retry title-only after a miss.
+
+    A bad imported/scanned year should not make an otherwise-correct title
+    impossible to identify. The fallback stays on the same TMDb endpoint.
+    """
+    items = _tmdb_search(title, year, media_type=media_type)
+    if not items and year not in (None, ""):
+        items = _tmdb_search(title, None, media_type=media_type)
+    return items
+
+
 def _tmdb_search_candidates(query_titles, year=None, max_searches=None, media_type="movie"):
     """Search candidate titles and merge TMDb movies without duplicate IDs."""
     merged = []
@@ -111,7 +123,7 @@ def _tmdb_search_candidates(query_titles, year=None, max_searches=None, media_ty
         if max_searches is not None and searched >= max_searches:
             break
         searched += 1
-        for item in _tmdb_search(title, year, media_type=media_type):
+        for item in _tmdb_search_with_title_fallback(title, year, media_type=media_type):
             tmdb_id = item.get("id")
             key = ("id", tmdb_id) if tmdb_id is not None else ("title", item.get("title"), item.get("release_date"))
             if key in seen_ids:
@@ -141,7 +153,7 @@ def _find_high_confidence_match(query_titles, query_year, search_cache, media_ty
     for title in query_titles[:MAX_MATCH_SEARCHES]:
         key = (_media_type(media_type), (title or "").casefold(), str(query_year or ""))
         if key not in search_cache:
-            search_cache[key] = _tmdb_search(title, query_year, media_type=media_type)
+            search_cache[key] = _tmdb_search_with_title_fallback(title, query_year, media_type=media_type)
         searched_titles.append(title)
         for item in search_cache[key]:
             item_key = item.get("id") or (item.get("title"), item.get("release_date"))
@@ -1237,7 +1249,18 @@ def identify_movie(library_id, movie_id, library, role):
     identify_type = _identify_type(request.args.get("media_type") or (movie["media_type"] if "media_type" in movie.keys() else "movie"))
     if movie["parent_box_set_id"] and identify_type == "collection":
         identify_type = "movie"
-    query_titles, query_year = _match_queries_for_movie(movie, media_type=identify_type)
+    search_title = (request.args.get("search_title") or "").strip()
+    if search_title:
+        if identify_type == "collection":
+            query_titles = movie_box_set_title_candidates(search_title) or [search_title]
+        else:
+            query_titles = search_ready_title_candidates(search_title, media_type=identify_type) or [search_title]
+            if search_title not in query_titles:
+                query_titles.insert(0, search_title)
+        # An explicit correction is authoritative; do not constrain it with stale metadata.
+        query_year = None
+    else:
+        query_titles, query_year = _match_queries_for_movie(movie, media_type=identify_type)
     try:
         if identify_type == "collection":
             results = _tmdb_collection_search_candidates(query_titles)
@@ -1254,6 +1277,6 @@ def identify_movie(library_id, movie_id, library, role):
     poster_size = current_app.config.get("TMDB_POSTER_SIZE", "w342")
     return render_template(
         "identify.html", library=library, role=role, movie=movie, results=results,
-        poster_size=poster_size, media_type=identify_type,
+        poster_size=poster_size, media_type=identify_type, search_title=search_title,
     )
 

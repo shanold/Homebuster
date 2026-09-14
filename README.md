@@ -369,3 +369,9 @@ Blu-ray/DVD combo packs remain a single physical inventory copy. Common scan spe
 - A live 10–40 movies-per-row slider changes shelf density immediately and adapts to narrower screens.
 - View mode and density are remembered in the browser with localStorage.
 - List View adds a subtle cropped poster-art slice in the unused background area while keeping metadata readable.
+
+
+## v0.3.33 — Reliable Shelf Toggle + Export Hub
+- Shelf View controls no longer depend on localStorage being available; view switching and density controls still work when browser storage is blocked or unavailable.
+- View and density persistence remain best-effort when localStorage is available.
+- The main library toolbar now has one Export button leading to a dedicated Export page for Movies CSV and Box Sets CSV downloads.

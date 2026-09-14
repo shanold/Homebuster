@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+{% block title %}Export · {{ library.name }} · Homebuster{% endblock %}
+{% block content %}
+{% include '_library_nav.html' %}
+<div class="page-heading"><div><h2>Export</h2><p>Download Homebuster CSV backups for {{ library.name }}.</p></div></div>
+<div class="form-grid">
+  <section class="panel">
+    <h3>Export Movies CSV</h3>
+    <p class="muted">Downloads normal movie and TV inventory rows, including shelf, collection, and physical copy metadata.</p>
+    <a class="button primary" href="{{ url_for('catalog.export_csv',library_id=library.id) }}">Export Movies CSV</a>
+  </section>
+  <section class="panel">
+    <h3>Export Box Sets CSV</h3>
+    <p class="muted">Downloads physical movie collections / box sets and their contained-film membership.</p>
+    <a class="button primary" href="{{ url_for('box_sets.export_csv',library_id=library.id) }}">Export Box Sets CSV</a>
+  </section>
+</div>
+<div class="toolbar"><a class="button" href="{{ url_for('catalog.library_home',library_id=library.id) }}">Back to Library</a></div>
+{% endblock %}

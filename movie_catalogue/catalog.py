@@ -913,6 +913,13 @@ def collection_delete(library_id, collection_id, library, role):
     return redirect(url_for("catalog.collections", library_id=library_id))
 
 
+@bp.get("/libraries/<int:library_id>/export")
+@login_required
+@require_library_role("viewer")
+def export_page(library_id, library, role):
+    return render_template("export.html", library=library, role=role)
+
+
 @bp.get("/libraries/<int:library_id>/export.csv")
 @login_required
 @require_library_role("viewer")

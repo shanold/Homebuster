@@ -89,6 +89,22 @@
   const densityValue = document.getElementById('shelf-density-value');
   const viewButtons = Array.from(document.querySelectorAll('[data-shelf-view]'));
 
+  const storageGet = key => {
+    try {
+      return window.localStorage ? window.localStorage.getItem(key) : null;
+    } catch (error) {
+      return null;
+    }
+  };
+
+  const storageSet = (key, value) => {
+    try {
+      if (window.localStorage) window.localStorage.setItem(key, value);
+    } catch (error) {
+      // Shelf controls must keep working even when browser storage is unavailable.
+    }
+  };
+
   document.querySelectorAll('.shelf-list-card[data-poster]').forEach(card => {
     const poster = card.dataset.poster;
     if (poster) card.style.setProperty('--shelf-list-poster', `url("${poster.replace(/"/g, '%22')}")`);
@@ -125,18 +141,18 @@
     return next;
   };
 
-  const savedDensity = localStorage.getItem(STORAGE_DENSITY) || density.value;
+  const savedDensity = storageGet(STORAGE_DENSITY) || density.value;
   applyDensity(savedDensity);
-  applyView(localStorage.getItem(STORAGE_VIEW) || 'list');
+  applyView(storageGet(STORAGE_VIEW) || 'list');
 
   density.addEventListener('input', () => {
     const requested = applyDensity(density.value);
-    localStorage.setItem(STORAGE_DENSITY, requested);
+    storageSet(STORAGE_DENSITY, requested);
   });
   window.addEventListener('resize', () => applyDensity(density.value));
   viewButtons.forEach(button => button.addEventListener('click', () => {
     const mode = applyView(button.dataset.shelfView);
-    localStorage.setItem(STORAGE_VIEW, mode);
+    storageSet(STORAGE_VIEW, mode);
   }));
 
   const modal = document.getElementById('shelf-case-modal');

@@ -9,6 +9,7 @@ from flask import Blueprint, Response, abort, current_app, flash, jsonify, redir
 from flask_login import current_user, login_required
 
 from .db import get_db
+from .box_set_service import box_set_effective_state, member_effective_state
 from .permissions import require_library_role
 from .barcode_parser import (
     generate_movie_title_candidates,
@@ -43,6 +44,7 @@ def _group_movie_rows(rows):
         group = by_key.get(key)
         if group is None:
             group = dict(movie)
+            group["item_type"] = "movie"
             group["copies"] = [movie]
             group["copy_count"] = 1
             group["formats"] = [movie.get("format")] if movie.get("format") else []
@@ -281,58 +283,67 @@ def library_home(library_id, library, role):
         where.append("m.status=?"); params.append(status)
     if fmt:
         where.append("m.format=?"); params.append(fmt)
-    if shelf_raw == "unassigned":
-        where.append("m.shelf_id IS NULL")
-    elif shelf:
-        where.append("m.shelf_id=?"); params.append(shelf)
+    if shelf_raw == "unassigned": where.append("m.shelf_id IS NULL")
+    elif shelf: where.append("m.shelf_id=?"); params.append(shelf)
     if collection:
-        where.append("EXISTS (SELECT 1 FROM movie_collections mc WHERE mc.movie_id=m.id AND mc.collection_id=?)")
-        params.append(collection)
-    if availability == "loaned":
-        where.append("l.id IS NOT NULL")
-    elif availability == "available":
-        where.append("l.id IS NULL")
+        where.append("EXISTS (SELECT 1 FROM movie_collections mc WHERE mc.movie_id=m.id AND mc.collection_id=?)"); params.append(collection)
+    if availability == "loaned": where.append("l.id IS NOT NULL")
+    elif availability == "available": where.append("l.id IS NULL")
 
     order_sql = {
-        "title": "m.title COLLATE NOCASE ASC",
-        "year": "COALESCE(m.year,'') DESC, m.title COLLATE NOCASE ASC",
-        "recent": "m.id DESC",
-        "shelf": "COALESCE(s.sort_order,999999), COALESCE(s.name,''), m.title COLLATE NOCASE",
+        "title": "m.title COLLATE NOCASE ASC", "year": "COALESCE(m.year,'') DESC, m.title COLLATE NOCASE ASC",
+        "recent": "m.id DESC", "shelf": "COALESCE(s.sort_order,999999), COALESCE(s.name,''), m.title COLLATE NOCASE",
     }.get(sort, "m.title COLLATE NOCASE ASC")
-
-    join_sql = (
-        "FROM movies m "
-        "LEFT JOIN shelves s ON s.id=m.shelf_id "
-        "LEFT JOIN loans l ON l.movie_id=m.id AND l.returned_date IS NULL "
-    )
-    where_sql = " WHERE " + " AND ".join(where)
     physical_rows = db.execute(
         "SELECT m.*, s.name AS shelf_name, l.id AS active_loan_id, l.borrower_name, l.loaned_date "
-        + join_sql + where_sql + f" ORDER BY {order_sql}",
-        params,
+        "FROM movies m LEFT JOIN shelves s ON s.id=m.shelf_id LEFT JOIN loans l ON l.movie_id=m.id AND l.returned_date IS NULL "
+        " WHERE " + " AND ".join(where) + f" ORDER BY {order_sql}", params,
     ).fetchall()
-    grouped_movies = _group_movie_rows(physical_rows)
-    total = len(grouped_movies)
-    offset = (page - 1) * page_size
-    movies = grouped_movies[offset:offset + page_size]
-    shelves = db.execute("SELECT * FROM shelves WHERE library_id=? ORDER BY sort_order,name COLLATE NOCASE", (library_id,)).fetchall()
-    collections = db.execute(
-        "SELECT c.*, COUNT(mc.movie_id) AS movie_count FROM collections c "
-        "LEFT JOIN movie_collections mc ON mc.collection_id=c.id WHERE c.library_id=? "
-        "GROUP BY c.id ORDER BY c.name COLLATE NOCASE",
-        (library_id,),
+    items = _group_movie_rows(physical_rows)
+
+    # Movie box sets are separate physical inventory objects. Member rows are display/search identities only.
+    bs_where = ["bs.library_id=?"]
+    bs_params = [library_id]
+    if status: bs_where.append("bs.status=?"); bs_params.append(status)
+    if fmt: bs_where.append("bs.format=?"); bs_params.append(fmt)
+    if shelf_raw == "unassigned": bs_where.append("bs.shelf_id IS NULL")
+    elif shelf: bs_where.append("bs.shelf_id=?"); bs_params.append(shelf)
+    if q:
+        needle=f"%{q}%"
+        bs_where.append("(bs.title LIKE ? OR bs.barcode LIKE ? OR bs.notes LIKE ? OR EXISTS (SELECT 1 FROM box_set_members bsm WHERE bsm.box_set_id=bs.id AND bsm.title LIKE ?))")
+        bs_params.extend([needle,needle,needle,needle])
+    box_rows = [] if collection else db.execute(
+        "SELECT bs.*,s.name AS shelf_name,(SELECT COUNT(*) FROM box_set_members bsm WHERE bsm.box_set_id=bs.id) AS member_count "
+        "FROM box_sets bs LEFT JOIN shelves s ON s.id=bs.shelf_id WHERE " + " AND ".join(bs_where) + " ORDER BY bs.title COLLATE NOCASE", bs_params
     ).fetchall()
-    formats = [r[0] for r in db.execute("SELECT DISTINCT format FROM movies WHERE library_id=? AND format IS NOT NULL AND format<>'' ORDER BY format", (library_id,)).fetchall()]
-    active_loans = db.execute("SELECT COUNT(*) FROM loans WHERE library_id=? AND returned_date IS NULL", (library_id,)).fetchone()[0]
-    pending_review_count = db.execute(
-        "SELECT COUNT(*) FROM movies WHERE library_id=? AND review_pending=1", (library_id,)
-    ).fetchone()[0]
-    pages = max(1, (total + page_size - 1) // page_size)
-    return render_template(
-        "catalogue.html", library=library, role=role, movies=movies, shelves=shelves,
-        collections=collections, formats=formats, active_loans=active_loans,
-        pending_review_count=pending_review_count, total=total, page=page, pages=pages,
-    )
+    show_members = bool(library["show_box_set_members"] if "show_box_set_members" in library.keys() else 0)
+    for row in box_rows:
+        state=box_set_effective_state(db,row["id"])
+        if availability == "loaned" and state["state"] == "available": continue
+        if availability == "available" and state["state"] != "available": continue
+        item=dict(row); item.update({"item_type":"box_set","loan_state":state["state"],"active_loan_id":state["whole_loan"]["id"] if state["whole_loan"] else None})
+        items.append(item)
+        member_rows=db.execute("SELECT * FROM box_set_members WHERE box_set_id=? ORDER BY position,id",(row["id"],)).fetchall()
+        for member in member_rows:
+            member_matches = (not q) or q.casefold() in (member["title"] or "").casefold()
+            if not show_members and not (q and member_matches): continue
+            if q and not member_matches: continue
+            effective=member_effective_state(db,member["id"])
+            items.append({"item_type":"box_set_member","id":member["id"],"box_set_id":row["id"],"box_set_title":row["title"],"title":member["title"],"year":member["year"],"poster_path":member["poster_path"],"format":row["format"],"shelf_name":row["shelf_name"],"loan_state":effective["state"]})
+
+    if sort == "recent": items.sort(key=lambda x: int(x.get("id") or 0), reverse=True)
+    elif sort == "year": items.sort(key=lambda x: (str(x.get("year") or ""), str(x.get("title") or "").casefold()), reverse=True)
+    else: items.sort(key=lambda x: str(x.get("title") or "").casefold())
+    total=len(items); offset=(page-1)*page_size; movies=items[offset:offset+page_size]
+    physical_item_count=len(_group_movie_rows(db.execute("SELECT * FROM movies WHERE library_id=?",(library_id,)).fetchall())) + db.execute("SELECT COUNT(*) FROM box_sets WHERE library_id=?",(library_id,)).fetchone()[0]
+    contained_titles=db.execute("SELECT COUNT(*) FROM box_set_members bsm JOIN box_sets bs ON bs.id=bsm.box_set_id WHERE bs.library_id=?",(library_id,)).fetchone()[0]
+    shelves=db.execute("SELECT * FROM shelves WHERE library_id=? ORDER BY sort_order,name COLLATE NOCASE",(library_id,)).fetchall()
+    collections=db.execute("SELECT c.*,COUNT(mc.movie_id) AS movie_count FROM collections c LEFT JOIN movie_collections mc ON mc.collection_id=c.id WHERE c.library_id=? GROUP BY c.id ORDER BY c.name COLLATE NOCASE",(library_id,)).fetchall()
+    formats=[r[0] for r in db.execute("SELECT format FROM (SELECT format FROM movies WHERE library_id=? UNION SELECT format FROM box_sets WHERE library_id=?) WHERE format IS NOT NULL AND format<>'' ORDER BY format",(library_id,library_id)).fetchall()]
+    active_loans=(db.execute("SELECT COUNT(*) FROM loans WHERE library_id=? AND returned_date IS NULL",(library_id,)).fetchone()[0]+db.execute("SELECT COUNT(*) FROM box_set_loans WHERE library_id=? AND returned_date IS NULL",(library_id,)).fetchone()[0]+db.execute("SELECT COUNT(*) FROM box_set_member_loans WHERE library_id=? AND returned_date IS NULL",(library_id,)).fetchone()[0])
+    pending_review_count=db.execute("SELECT COUNT(*) FROM movies WHERE library_id=? AND review_pending=1",(library_id,)).fetchone()[0]
+    pages=max(1,(total+page_size-1)//page_size)
+    return render_template("catalogue.html",library=library,role=role,movies=movies,shelves=shelves,collections=collections,formats=formats,active_loans=active_loans,pending_review_count=pending_review_count,total=total,physical_item_count=physical_item_count,contained_titles=contained_titles,page=page,pages=pages)
 
 
 @bp.route("/libraries/<int:library_id>/movies/new", methods=["GET", "POST"])
@@ -345,7 +356,10 @@ def movie_new(library_id, library, role):
     # and old clients that submit the movie form are not broken.
     if request.method == "GET":
         query = (request.args.get("q") or "").strip()
-        media_type = _media_type(request.args.get("media_type"))
+        requested_type = (request.args.get("media_type") or "movie").strip().lower()
+        if requested_type == "collection":
+            return redirect(url_for("box_sets.new_box_set", library_id=library_id, q=query))
+        media_type = _media_type(requested_type)
         api_configured = bool(current_app.config.get("TMDB_API_KEY"))
         results = []
         if query and api_configured:
@@ -531,20 +545,21 @@ def movie_delete(library_id, movie_id, library, role):
 @login_required
 @require_library_role("viewer")
 def loans(library_id, library, role):
-    q = (request.args.get("q") or "").strip()
-    db = get_db(); params = [library_id]; extra = ""
-    if q:
-        extra = " AND (m.title LIKE ? OR l.borrower_name LIKE ? OR l.phone LIKE ?)"
-        needle = f"%{q}%"; params.extend([needle, needle, needle])
-    rows = db.execute(
-        """
-        SELECT l.*, m.title, m.poster_path
-        FROM loans l JOIN movies m ON m.id=l.movie_id
-        WHERE l.library_id=? AND l.returned_date IS NULL
-        """ + extra + " ORDER BY l.loaned_date ASC,l.id ASC",
-        params,
-    ).fetchall()
-    return render_template("loans.html", library=library, role=role, loans=rows, q=q)
+    q=(request.args.get("q") or "").strip(); needle=f"%{q}%"; db=get_db(); normalized=[]
+    params=[library_id]; extra=""
+    if q: extra=" AND (m.title LIKE ? OR l.borrower_name LIKE ? OR l.phone LIKE ?)"; params.extend([needle,needle,needle])
+    for r in db.execute("SELECT l.*,m.title FROM loans l JOIN movies m ON m.id=l.movie_id WHERE l.library_id=? AND l.returned_date IS NULL"+extra,params).fetchall():
+        normalized.append({"loan_kind":"movie","movie_id":r["movie_id"],"title":r["title"],"borrower_name":r["borrower_name"],"loaned_date":r["loaned_date"],"phone":r["phone"],"notes":r["notes"],"detail_endpoint":"catalog.movie_detail","return_endpoint":"catalog.return_movie"})
+    params=[library_id]; extra=""
+    if q: extra=" AND (bs.title LIKE ? OR bsl.borrower_name LIKE ? OR bsl.phone LIKE ?)"; params.extend([needle,needle,needle])
+    for r in db.execute("SELECT bsl.*,bs.title FROM box_set_loans bsl JOIN box_sets bs ON bs.id=bsl.box_set_id WHERE bsl.library_id=? AND bsl.returned_date IS NULL"+extra,params).fetchall():
+        normalized.append({"loan_kind":"box_set","box_set_id":r["box_set_id"],"title":r["title"],"borrower_name":r["borrower_name"],"loaned_date":r["loaned_date"],"phone":r["phone"],"notes":r["notes"]})
+    params=[library_id]; extra=""
+    if q: extra=" AND (bsm.title LIKE ? OR bs.title LIKE ? OR bml.borrower_name LIKE ? OR bml.phone LIKE ?)"; params.extend([needle,needle,needle,needle])
+    for r in db.execute("SELECT bml.*,bsm.id member_id,bsm.box_set_id,bsm.title,bs.title box_set_title FROM box_set_member_loans bml JOIN box_set_members bsm ON bsm.id=bml.box_set_member_id JOIN box_sets bs ON bs.id=bsm.box_set_id WHERE bml.library_id=? AND bml.returned_date IS NULL"+extra,params).fetchall():
+        normalized.append({"loan_kind":"box_set_member","member_id":r["member_id"],"box_set_id":r["box_set_id"],"title":r["title"],"box_set_title":r["box_set_title"],"borrower_name":r["borrower_name"],"loaned_date":r["loaned_date"],"phone":r["phone"],"notes":r["notes"]})
+    normalized.sort(key=lambda x:(x.get("loaned_date") or "",x.get("title") or ""))
+    return render_template("loans.html",library=library,role=role,loans=normalized,q=q)
 
 
 @bp.post("/libraries/<int:library_id>/movies/<int:movie_id>/loan")

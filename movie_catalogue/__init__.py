@@ -44,11 +44,13 @@ def create_app(test_config=None) -> Flask:
 
     from .libraries import bp as libraries_bp
     from .catalog import bp as catalog_bp
+    from .box_sets import bp as box_sets_bp
     from .admin import bp as admin_bp
     from .mobile_api import bp as mobile_api_bp
     app.register_blueprint(auth_bp)
     app.register_blueprint(libraries_bp)
     app.register_blueprint(catalog_bp)
+    app.register_blueprint(box_sets_bp)
     app.register_blueprint(admin_bp)
     csrf.exempt(mobile_api_bp)
     app.register_blueprint(mobile_api_bp)

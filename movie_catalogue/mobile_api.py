@@ -8,7 +8,8 @@ from flask import Blueprint, current_app, g, jsonify, request
 from werkzeug.security import check_password_hash
 
 from .db import get_db
-from .integrations import barcode_product_lookup, tmdb_search
+from .box_set_service import (BoxSetLoanConflict, create_box_set, get_box_set, get_box_set_members, box_set_effective_state, member_effective_state, loan_box_set, return_box_set, loan_box_set_member, return_box_set_member)
+from .integrations import barcode_product_lookup, tmdb_search, tmdb_collection_search, tmdb_collection_details
 from .barcode_parser import (
     best_match_score,
     generate_movie_title_candidates,
@@ -16,6 +17,7 @@ from .barcode_parser import (
     search_ready_title_candidates,
     infer_copy_metadata_from_legacy_title,
     rank_tmdb_results,
+    movie_box_set_title_candidates,
 )
 
 bp = Blueprint("mobile_api", __name__, url_prefix="/api/v1")
@@ -110,6 +112,24 @@ def _movie_row(row):
         "disc_count": row["disc_count"],
         "notes": row["notes"],
     }
+
+
+def _box_set_row(db, row, include_members=True):
+    state = box_set_effective_state(db, row["id"])
+    data = {
+        "id": row["id"], "library_id": row["library_id"], "title": row["title"],
+        "tmdb_collection_id": row["tmdb_collection_id"], "poster_path": _mobile_poster_url(row["poster_path"]),
+        "format": row["format"], "upc": row["barcode"], "barcode": row["barcode"],
+        "version": row["version"], "country": row["country"], "language": row["language"],
+        "region": row["region"], "disc_count": row["disc_count"], "notes": row["notes"],
+        "shelf_id": row["shelf_id"], "status": row["status"], "loan_state": state["state"],
+    }
+    if include_members:
+        data["members"] = []
+        for member in get_box_set_members(db, row["id"]):
+            effective = member_effective_state(db, member["id"])
+            data["members"].append({"id":member["id"],"tmdb_id":member["tmdb_id"],"title":member["title"],"year":int(member["year"]) if member["year"] and str(member["year"]).isdigit() else None,"poster_path":_mobile_poster_url(member["poster_path"]),"position":member["position"],"loan_state":effective["state"]})
+    return data
 
 
 def _accessible_library_ids(db, user_id: int):
@@ -500,7 +520,10 @@ def _barcode_tmdb_matches(product: dict, media_type: str = "movie") -> tuple[lis
 @bp.get("/barcodes/<upc>")
 @token_required
 def barcode_lookup(upc):
-    media_type = "tv" if (request.args.get("media_type") or "movie").strip().lower() == "tv" else "movie"
+    requested_type = (request.args.get("media_type") or "movie").strip().lower()
+    if requested_type not in {"movie", "tv", "collection"}:
+        return _json_error("media_type must be movie, tv, or collection", 400)
+    media_type = requested_type
     upc = "".join(ch for ch in upc if ch.isdigit())
     if len(upc) not in (8, 12, 13, 14):
         return _json_error("Unsupported barcode", 400)
@@ -508,12 +531,14 @@ def barcode_lookup(upc):
     ids = _accessible_library_ids(db, g.api_user["id"])
     if ids:
         placeholders = ",".join("?" for _ in ids)
-        existing = db.execute(
-            f"SELECT * FROM movies WHERE library_id IN ({placeholders}) AND barcode=? ORDER BY id LIMIT 1",
-            [*ids, upc],
-        ).fetchone()
-        if existing:
-            return jsonify({"status": "owned", "movie": _movie_row(existing), "upc": upc})
+        if media_type == "collection":
+            existing_box = db.execute(f"SELECT * FROM box_sets WHERE library_id IN ({placeholders}) AND barcode=? ORDER BY id LIMIT 1", [*ids, upc]).fetchone()
+            if existing_box:
+                return jsonify({"status":"owned","box_set":_box_set_row(db,existing_box),"upc":upc,"media_type":"collection"})
+        else:
+            existing = db.execute(f"SELECT * FROM movies WHERE library_id IN ({placeholders}) AND barcode=? ORDER BY id LIMIT 1", [*ids, upc]).fetchone()
+            if existing:
+                return jsonify({"status": "owned", "movie": _movie_row(existing), "upc": upc})
     try:
         product = barcode_product_lookup(upc)
     except Exception as exc:
@@ -530,6 +555,23 @@ def barcode_lookup(upc):
             "best_match": None,
             "tmdb_results": [],
         })
+    if media_type == "collection":
+        raw_title = str(product.get("product_title") or "").strip()
+        candidates = movie_box_set_title_candidates(raw_title)
+        attempts=[]; merged={}
+        try:
+            for query_title in candidates[:3]:
+                results = tmdb_collection_search(query_title)
+                attempts.append({"title":query_title,"results":len(results)})
+                for item in results:
+                    merged[item.get("id") or item.get("title")] = item
+                if results:
+                    break
+        except Exception as exc:
+            current_app.logger.warning("TMDb Collection barcode lookup failed: %s", exc)
+        results=list(merged.values())[:20]
+        return jsonify({"status":"product_match","upc":upc,"product":product,"lookup":{"title":attempts[-1]["title"] if attempts else raw_title,"attempts":attempts,"format":product.get("detected_format"),"formats":product.get("detected_formats") or [],"edition":product.get("detected_edition"),"language":product.get("detected_language"),"region":product.get("detected_region"),"disc_count":product.get("detected_disc_count")},"best_match":results[0] if results else None,"media_type":"collection","tmdb_results":results})
+
     search_title = (product.get("search_title") or product.get("product_title") or "").strip()
     search_year = product.get("search_year")
     try:
@@ -560,3 +602,118 @@ def barcode_lookup(upc):
         "media_type": media_type,
         "tmdb_results": matches,
     })
+
+
+@bp.get("/tmdb/collections/search")
+@token_required
+def tmdb_collection_lookup():
+    query=(request.args.get("q") or "").strip()
+    if not query: return jsonify({"results":[]})
+    try: return jsonify({"results":tmdb_collection_search(query)})
+    except Exception as exc:
+        current_app.logger.warning("TMDb Collection lookup failed: %s",exc)
+        return _json_error("TMDb Collection lookup failed",502)
+
+@bp.get("/tmdb/collections/<int:collection_id>")
+@token_required
+def tmdb_collection_detail(collection_id):
+    try: details=tmdb_collection_details(collection_id)
+    except Exception as exc:
+        current_app.logger.warning("TMDb Collection detail failed: %s",exc); return _json_error("TMDb Collection lookup failed",502)
+    if not details: return _json_error("Collection not found",404)
+    return jsonify({"collection":details})
+
+@bp.get("/box-sets")
+@token_required
+def box_sets_list():
+    db=get_db(); ids=_accessible_library_ids(db,g.api_user["id"])
+    if not ids: return jsonify({"box_sets":[]})
+    library_id=request.args.get("library_id",type=int)
+    if library_id is not None and library_id not in ids: return _json_error("Library not found",404)
+    target=[library_id] if library_id is not None else ids
+    ph=','.join('?' for _ in target); q=(request.args.get('q') or '').strip(); params=list(target)
+    sql=f"SELECT DISTINCT bs.* FROM box_sets bs LEFT JOIN box_set_members bsm ON bsm.box_set_id=bs.id WHERE bs.library_id IN ({ph})"
+    if q:
+        sql+=" AND (bs.title LIKE ? OR bs.barcode LIKE ? OR bsm.title LIKE ?)"; needle=f"%{q}%"; params.extend([needle,needle,needle])
+    sql+=" ORDER BY bs.title COLLATE NOCASE"
+    return jsonify({"box_sets":[_box_set_row(db,r) for r in db.execute(sql,params).fetchall()]})
+
+@bp.get("/box-sets/<int:box_set_id>")
+@token_required
+def box_set_detail_api(box_set_id):
+    db=get_db(); row=db.execute("SELECT * FROM box_sets WHERE id=?",(box_set_id,)).fetchone()
+    if not row: return _json_error("Box set not found",404)
+    library,role=_library_role(db,row["library_id"],g.api_user["id"])
+    if not library: return _json_error("Box set not found",404)
+    return jsonify({"box_set":_box_set_row(db,row)})
+
+@bp.post("/box-sets")
+@token_required
+def add_box_set_api():
+    data=request.get_json(silent=True) or {}; db=get_db(); library_id=data.get("library_id")
+    try: library_id=int(library_id)
+    except (TypeError,ValueError): return _json_error("library_id is required")
+    library,role=_library_role(db,library_id,g.api_user["id"])
+    if not library or ROLE_LEVEL[role]<ROLE_LEVEL["editor"]: return _json_error("Library is not editable",403)
+    physical={k:data.get(k) for k in ("barcode","title","tmdb_collection_id","poster_path","format","version","country","language","region","disc_count","notes","shelf_id","status")}
+    physical["poster_path"]=_mobile_poster_url(physical.get("poster_path")); physical["status"]=physical.get("status") or "owned"
+    if physical.get("shelf_id") not in (None, ""):
+        try: shelf_id=int(physical["shelf_id"])
+        except (TypeError,ValueError): return _json_error("Invalid shelf_id")
+        if not db.execute("SELECT 1 FROM shelves WHERE id=? AND library_id=?",(shelf_id,library_id)).fetchone():
+            return _json_error("Shelf does not belong to this Library",400)
+        physical["shelf_id"]=shelf_id
+    members=[]
+    for i,m in enumerate(data.get("members") or []):
+        members.append({"tmdb_id":m.get("tmdb_id"),"title":m.get("title"),"year":m.get("year"),"poster_path":_mobile_poster_url(m.get("poster_path")),"position":m.get("position",i)})
+    try: box_id=create_box_set(db,library_id,physical,members)
+    except Exception as exc: return _json_error(str(exc),400)
+    row=db.execute("SELECT * FROM box_sets WHERE id=?",(box_id,)).fetchone(); return jsonify({"box_set":_box_set_row(db,row)}),201
+
+def _api_box_access(box_set_id,minimum="viewer"):
+    db=get_db(); row=db.execute("SELECT * FROM box_sets WHERE id=?",(box_set_id,)).fetchone()
+    if not row: return db,None,None,_json_error("Box set not found",404)
+    library,role=_library_role(db,row["library_id"],g.api_user["id"])
+    if not library: return db,row,None,_json_error("Box set not found",404)
+    if ROLE_LEVEL[role]<ROLE_LEVEL[minimum]: return db,row,role,_json_error("Library is not editable",403)
+    return db,row,role,None
+
+@bp.post("/box-sets/<int:box_set_id>/loan")
+@token_required
+def loan_box_set_api(box_set_id):
+    db,row,role,error=_api_box_access(box_set_id,"editor")
+    if error:return error
+    data=request.get_json(silent=True) or {}
+    try: loan_box_set(db,row["library_id"],box_set_id,data.get("borrower_name"),data.get("phone"),data.get("loaned_date"),data.get("notes"))
+    except BoxSetLoanConflict as exc:return _json_error(str(exc),409)
+    except ValueError as exc:return _json_error(str(exc),400)
+    return jsonify({"box_set":_box_set_row(db,row)})
+
+@bp.post("/box-sets/<int:box_set_id>/return")
+@token_required
+def return_box_set_api(box_set_id):
+    db,row,role,error=_api_box_access(box_set_id,"editor")
+    if error:return error
+    data=request.get_json(silent=True) or {}; return_box_set(db,row["library_id"],box_set_id,data.get("returned_date")); return jsonify({"box_set":_box_set_row(db,row)})
+
+@bp.post("/box-set-members/<int:member_id>/loan")
+@token_required
+def loan_box_set_member_api(member_id):
+    db=get_db(); member=db.execute("SELECT bsm.*,bs.library_id FROM box_set_members bsm JOIN box_sets bs ON bs.id=bsm.box_set_id WHERE bsm.id=?",(member_id,)).fetchone()
+    if not member:return _json_error("Contained film not found",404)
+    library,role=_library_role(db,member["library_id"],g.api_user["id"])
+    if not library or ROLE_LEVEL[role]<ROLE_LEVEL["editor"]:return _json_error("Library is not editable",403)
+    data=request.get_json(silent=True) or {}
+    try:loan_box_set_member(db,member["library_id"],member_id,data.get("borrower_name"),data.get("phone"),data.get("loaned_date"),data.get("notes"))
+    except BoxSetLoanConflict as exc:return _json_error(str(exc),409)
+    except ValueError as exc:return _json_error(str(exc),400)
+    return jsonify({"member_id":member_id,"loan_state":member_effective_state(db,member_id)["state"]})
+
+@bp.post("/box-set-members/<int:member_id>/return")
+@token_required
+def return_box_set_member_api(member_id):
+    db=get_db(); member=db.execute("SELECT bsm.*,bs.library_id FROM box_set_members bsm JOIN box_sets bs ON bs.id=bsm.box_set_id WHERE bsm.id=?",(member_id,)).fetchone()
+    if not member:return _json_error("Contained film not found",404)
+    library,role=_library_role(db,member["library_id"],g.api_user["id"])
+    if not library or ROLE_LEVEL[role]<ROLE_LEVEL["editor"]:return _json_error("Library is not editable",403)
+    data=request.get_json(silent=True) or {}; return_box_set_member(db,member["library_id"],member_id,data.get("returned_date")); return jsonify({"member_id":member_id,"loan_state":member_effective_state(db,member_id)["state"]})

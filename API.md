@@ -34,3 +34,18 @@ Movie objects now include `media_type`, either `movie` or `tv`; missing/legacy v
 `GET /api/v1/barcodes/{upc}?media_type=movie|tv` uses the selected TMDb endpoint for barcode-derived matching. `movie` is the default.
 
 `POST /api/v1/movies` accepts `media_type`. Android and other clients should send the `media_type` from the selected TMDb result when adding a matched copy.
+
+## Physical movie box sets (v0.3.27)
+
+Authenticated API clients can use:
+
+- `GET /api/v1/box-sets?library_id=&q=` — list/search accessible physical movie box sets; member-film titles participate in `q`.
+- `GET /api/v1/box-sets/<id>` — box-set detail including contained films and effective loan states.
+- `POST /api/v1/box-sets` — create a physical box set in an editable library with a `members` array.
+- `POST /api/v1/box-sets/<id>/loan` and `/return` — whole-container loans.
+- `POST /api/v1/box-set-members/<id>/loan` and `/return` — contained-film loans.
+- `GET /api/v1/tmdb/collections/search?q=` — TMDb Collection search only.
+- `GET /api/v1/tmdb/collections/<id>` — TMDb Collection details and ordered `parts`.
+- `GET /api/v1/barcodes/<upc>?media_type=collection` — UPC product lookup followed only by TMDb Collection candidates.
+
+`media_type=collection` is explicit and never fans out into Movie or TV searches. Whole-set and contained-film loans are mutually exclusive while active; conflicting API loan requests return HTTP `409`.

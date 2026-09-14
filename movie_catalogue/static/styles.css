@@ -126,3 +126,6 @@
 }
 
 .checkbox-row{display:flex;flex-direction:row;align-items:center;gap:8px}.checkbox-row input{width:auto;margin:0}.media-type-toggle{display:flex;align-items:center;gap:8px}
+
+/* Physical movie box sets */
+.contained-films{display:grid;gap:.75rem}.contained-film{display:flex;gap:.75rem;align-items:center;padding:.65rem;border:1px solid var(--border,#444);border-radius:.7rem}.contained-film img{width:54px;aspect-ratio:2/3;object-fit:cover;border-radius:.35rem}.member-row .grow{flex:1}.box-set-card{border-style:double}.member-card{border-style:dashed}.tag.warning{font-weight:700}.form-grid .wide{grid-column:1/-1}

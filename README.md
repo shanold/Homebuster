@@ -320,3 +320,11 @@ TV searches now treat trailing inventory descriptors such as `Season 1`, `Comple
 - The selected Movie/TV mode now controls title candidate parsing before TMDb search.
 - Example: `Castle Season 1` + TV now searches `Castle`, then preserves `Season 1` as copy metadata when selected.
 - Android remains v0.3.25 / versionCode 17; this is a server/web Identify-path fix.
+
+## v0.3.27 — Physical Movie Box Sets / TMDb Collections
+
+Homebuster now supports physical movie box sets as first-class inventory items. A box set owns the real barcode, shelf, format, edition, region/language, disc count, notes, and loan state, while TMDb Collection data can populate the canonical films contained inside it. Contained films are hidden from the main library grid by default but remain searchable; a per-library setting can show them as clearly labeled **In box set** cards while keeping the parent box-set card visible.
+
+Whole box sets and individual contained films can be loaned. An individual film loan marks the parent incomplete and blocks a whole-set loan until it returns; a whole-set loan makes every contained film effectively unavailable without creating fake child loan records. Homebuster intentionally does not track which exact physical disc contains each movie. Existing user-created Homebuster Collections remain separate from physical Movie Box Sets / TMDb Collections.
+
+The server API includes first-class box-set and TMDb Collection endpoints plus explicit barcode `media_type=collection` lookup. Android box-set UI is intentionally deferred for this web/server-first release; existing Android release signing behavior is unchanged.

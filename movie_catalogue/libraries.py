@@ -49,11 +49,28 @@ def settings(library_id, library, role):
     ).fetchall()
     counts = db.execute(
         "SELECT (SELECT COUNT(*) FROM movies WHERE library_id=?) AS movies, "
+        "(SELECT COUNT(*) FROM box_sets WHERE library_id=?) AS box_sets, "
+        "(SELECT COUNT(*) FROM box_set_members bsm JOIN box_sets bs ON bs.id=bsm.box_set_id WHERE bs.library_id=?) AS contained_films, "
         "(SELECT COUNT(*) FROM shelves WHERE library_id=?) AS shelves, "
-        "(SELECT COUNT(*) FROM loans WHERE library_id=? AND returned_date IS NULL) AS loans",
-        (library_id, library_id, library_id),
+        "((SELECT COUNT(*) FROM loans WHERE library_id=? AND returned_date IS NULL) + "
+        " (SELECT COUNT(*) FROM box_set_loans WHERE library_id=? AND returned_date IS NULL) + "
+        " (SELECT COUNT(*) FROM box_set_member_loans WHERE library_id=? AND returned_date IS NULL)) AS loans",
+        (library_id, library_id, library_id, library_id, library_id, library_id, library_id),
     ).fetchone()
     return render_template("library_settings.html", library=library, role=role, members=members, counts=counts)
+
+
+@bp.post("/<int:library_id>/settings/box-set-members")
+@login_required
+@require_library_role("editor")
+def set_box_set_members_visibility(library_id, library, role):
+    db = get_db()
+    db.execute("UPDATE libraries SET show_box_set_members=? WHERE id=?", (1 if request.form.get("show_box_set_members") else 0, library_id))
+    db.commit()
+    flash("Box-set browsing preference updated.", "success")
+    if role == "owner":
+        return redirect(url_for("libraries.settings", library_id=library_id))
+    return redirect(url_for("catalog.library_home", library_id=library_id))
 
 
 @bp.post("/<int:library_id>/rename")
@@ -153,8 +170,8 @@ def clear_movies(library_id, library, role):
         flash('Type "DELETE MY COLLECTION" exactly to clear the Library.', "error")
         return redirect(url_for("libraries.settings", library_id=library_id))
     backup_database("before-clear")
-    db = get_db(); db.execute("DELETE FROM movies WHERE library_id=?", (library_id,)); db.commit()
-    flash("All movies were removed. A database backup was created first.", "success")
+    db = get_db(); db.execute("DELETE FROM movies WHERE library_id=?", (library_id,)); db.execute("DELETE FROM box_sets WHERE library_id=?", (library_id,)); db.commit()
+    flash("All titles and movie box sets were removed. A database backup was created first.", "success")
     return redirect(url_for("catalog.library_home", library_id=library_id))
 
 

@@ -174,6 +174,77 @@ def _create_catalog_tables(db: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_loans_movie ON loans(movie_id, returned_date);
         CREATE UNIQUE INDEX IF NOT EXISTS idx_one_active_loan_per_movie
             ON loans(movie_id) WHERE returned_date IS NULL;
+
+        CREATE TABLE IF NOT EXISTS box_sets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            library_id INTEGER NOT NULL,
+            barcode TEXT,
+            title TEXT NOT NULL,
+            tmdb_collection_id INTEGER,
+            poster_path TEXT,
+            format TEXT,
+            version TEXT,
+            country TEXT,
+            language TEXT,
+            region TEXT,
+            disc_count INTEGER,
+            notes TEXT,
+            shelf_id INTEGER,
+            status TEXT NOT NULL DEFAULT 'owned',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(library_id) REFERENCES libraries(id) ON DELETE CASCADE,
+            FOREIGN KEY(shelf_id) REFERENCES shelves(id) ON DELETE SET NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_box_sets_library_title ON box_sets(library_id, title COLLATE NOCASE);
+        CREATE INDEX IF NOT EXISTS idx_box_sets_barcode ON box_sets(library_id, barcode);
+        CREATE INDEX IF NOT EXISTS idx_box_sets_tmdb_collection ON box_sets(library_id, tmdb_collection_id);
+
+        CREATE TABLE IF NOT EXISTS box_set_members (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            box_set_id INTEGER NOT NULL,
+            tmdb_id INTEGER,
+            title TEXT NOT NULL,
+            year TEXT,
+            poster_path TEXT,
+            position INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY(box_set_id) REFERENCES box_sets(id) ON DELETE CASCADE,
+            UNIQUE(box_set_id, tmdb_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_box_set_members_box ON box_set_members(box_set_id, position, id);
+        CREATE INDEX IF NOT EXISTS idx_box_set_members_title ON box_set_members(title COLLATE NOCASE);
+
+        CREATE TABLE IF NOT EXISTS box_set_loans (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            library_id INTEGER NOT NULL,
+            box_set_id INTEGER NOT NULL,
+            borrower_name TEXT NOT NULL,
+            phone TEXT,
+            loaned_date TEXT NOT NULL,
+            returned_date TEXT,
+            notes TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(library_id) REFERENCES libraries(id) ON DELETE CASCADE,
+            FOREIGN KEY(box_set_id) REFERENCES box_sets(id) ON DELETE CASCADE
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_one_active_loan_per_box_set
+            ON box_set_loans(box_set_id) WHERE returned_date IS NULL;
+
+        CREATE TABLE IF NOT EXISTS box_set_member_loans (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            library_id INTEGER NOT NULL,
+            box_set_member_id INTEGER NOT NULL,
+            borrower_name TEXT NOT NULL,
+            phone TEXT,
+            loaned_date TEXT NOT NULL,
+            returned_date TEXT,
+            notes TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(library_id) REFERENCES libraries(id) ON DELETE CASCADE,
+            FOREIGN KEY(box_set_member_id) REFERENCES box_set_members(id) ON DELETE CASCADE
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_one_active_loan_per_box_member
+            ON box_set_member_loans(box_set_member_id) WHERE returned_date IS NULL;
         """
     )
 
@@ -186,6 +257,9 @@ def _ensure_catalog_columns(db: sqlite3.Connection) -> None:
     movie_cols = table_columns(db, "movies")
     if movie_cols and "media_type" not in movie_cols:
         db.execute("ALTER TABLE movies ADD COLUMN media_type TEXT NOT NULL DEFAULT 'movie'")
+    library_cols = table_columns(db, "libraries")
+    if library_cols and "show_box_set_members" not in library_cols:
+        db.execute("ALTER TABLE libraries ADD COLUMN show_box_set_members INTEGER NOT NULL DEFAULT 0")
 
 
 def _bootstrap_admin(db: sqlite3.Connection) -> None:

@@ -37,5 +37,5 @@ def test_android_api_carries_media_type_and_explicit_tmdb_mode():
 def test_version_bumped_for_server_and_android():
     config = read('movie_catalogue/config.py')
     gradle = read('android/app/build.gradle.kts')
-    assert '0.3.24' in config or '0.3.25' in config
+    assert any(v in config for v in ('0.3.24','0.3.25','0.3.26','0.3.27'))
     assert 'versionName = "0.3.24"' in gradle or 'versionName = "0.3.25"' in gradle

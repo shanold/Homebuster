@@ -13,6 +13,7 @@
       <select name="media_type">
         <option value="movie" {% if media_type != 'tv' %}selected{% endif %}>Movie</option>
         <option value="tv" {% if media_type == 'tv' %}selected{% endif %}>TV / Box Set</option>
+        <option value="collection">Movie Collection / Box Set</option>
       </select>
     </label>
     <label class="grow">Title
@@ -20,7 +21,7 @@
     </label>
     <button class="primary" type="submit">Search TMDb</button>
   </form>
-  <p class="muted">Movie is the default. TV searches are only sent to TMDb when you choose TV / Box Set.</p>
+  <p class="muted">Movie is the default. Movie, TV, and Collection searches use only the endpoint you choose.</p>
   {% else %}
   <div class="flash warning">TMDb lookup is unavailable because <code>TMDB_API_KEY</code> is not configured. You can still add titles manually.</div>
   {% endif %}

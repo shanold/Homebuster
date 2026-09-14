@@ -1008,3 +1008,71 @@ def rank_tmdb_results(query_title: str, query_year: int | None, results: Iterabl
 
 def best_match_score(results: Iterable[Mapping]) -> int:
     return max((int(item.get("match_score") or 0) for item in results), default=0)
+
+
+_BOX_SET_STRONG_PATTERNS = (
+    re.compile(r"\b\d+\s*[- ]?film\s+collection\b", re.I),
+    re.compile(r"\b(?:complete\s+)?movie\s+collection\b", re.I),
+    re.compile(r"\bbox\s*set\b", re.I),
+    re.compile(r"\bboxset\b", re.I),
+    re.compile(r"\btrilogy\b", re.I),
+    re.compile(r"\bquadrilogy\b", re.I),
+)
+_BOX_SET_STRIP_PATTERNS = (
+    re.compile(r"\b\d+\s*[- ]?film\s+collection\b", re.I),
+    re.compile(r"\b(?:complete\s+)?movie\s+collection\b", re.I),
+    re.compile(r"\b(?:complete\s+)?collection\s+box\s*set\b", re.I),
+    re.compile(r"\b(?:complete\s+)?collection\b", re.I),
+    re.compile(r"\bcollection\b", re.I),
+    re.compile(r"\bbox\s*set\b|\bboxset\b", re.I),
+    re.compile(r"\btrilogy\b", re.I),
+    re.compile(r"\bquadrilogy\b", re.I),
+)
+
+
+def detect_movie_box_set_hint(raw_title: str) -> bool:
+    text = _normalize_spaces(raw_title or "")
+    if not text:
+        return False
+    if any(pattern.search(text) for pattern in _BOX_SET_STRONG_PATTERNS):
+        return True
+    # A bare "collection" is only a hint with clear retail/set evidence.
+    if re.search(r"\bcollection\b", text, re.I):
+        has_format = any(pattern.search(text) for pattern, _ in _FORMAT_PATTERNS)
+        has_count = bool(re.search(r"\b\d+\s*[- ]?film\b", text, re.I))
+        has_complete = bool(re.search(r"\bcomplete\b", text, re.I))
+        base = re.split(r"\bcollection\b", text, maxsplit=1, flags=re.I)[0].strip(" -,:;")
+        # Retail titles such as "Harry Potter Collection Blu-ray" are strong enough,
+        # while the ordinary movie title "The Collection" remains protected.
+        named_franchise = len(base.split()) >= 2 and base.casefold() != "the"
+        return has_format and (has_count or has_complete or named_franchise)
+    return False
+
+
+def movie_box_set_title_candidates(raw_title: str) -> list[str]:
+    raw = _normalize_spaces(raw_title or "")
+    if not raw:
+        return []
+    if not detect_movie_box_set_hint(raw):
+        return [raw]
+
+    candidates: list[str] = []
+
+    def add(value: str):
+        value = _normalize_spaces(re.sub(r"\s+([,:;])", r"\1", value)).strip(" -,:;/")
+        if value and value.casefold() not in {x.casefold() for x in candidates}:
+            candidates.append(value)
+
+    # Start from the normal parser-cleaned title because this already removes media formats,
+    # disc counts, edition text, language/region metadata, etc.
+    parsed = parse_barcode_product_title(raw)
+    for base in (parsed.title, parsed.fallback_title, raw):
+        value = base or ""
+        for pattern in _BOX_SET_STRIP_PATTERNS:
+            value = pattern.sub(" ", value)
+        value = re.sub(r"\b\d+\s*[- ]?film\b", " ", value, flags=re.I)
+        for format_pattern, _format_name in _FORMAT_PATTERNS:
+            value = format_pattern.sub(" ", value)
+        add(value)
+    add(raw)
+    return candidates

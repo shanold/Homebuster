@@ -106,3 +106,58 @@ def barcode_product_lookup(upc: str):
         "detected_category": parsed.category,
         "brand": brand,
     }
+
+
+def tmdb_collection_search(query: str):
+    query = (query or "").strip()
+    key = (current_app.config.get("TMDB_API_KEY") or "").strip()
+    if not key or not query:
+        return []
+    response = requests.get(
+        "https://api.themoviedb.org/3/search/collection",
+        params={"api_key": key, "query": query},
+        timeout=10,
+    )
+    response.raise_for_status()
+    results = []
+    for item in response.json().get("results", [])[:20]:
+        results.append({
+            "id": item.get("id"),
+            "title": item.get("name") or item.get("original_name") or "",
+            "overview": item.get("overview") or "",
+            "poster_path": item.get("poster_path"),
+            "backdrop_path": item.get("backdrop_path"),
+        })
+    return results
+
+
+def tmdb_collection_details(collection_id: int):
+    key = (current_app.config.get("TMDB_API_KEY") or "").strip()
+    if not key:
+        return None
+    response = requests.get(
+        f"https://api.themoviedb.org/3/collection/{int(collection_id)}",
+        params={"api_key": key},
+        timeout=10,
+    )
+    if response.status_code == 404:
+        return None
+    response.raise_for_status()
+    item = response.json()
+    parts = []
+    for position, part in enumerate(item.get("parts") or []):
+        parts.append({
+            "id": part.get("id"),
+            "title": part.get("title") or part.get("original_title") or "",
+            "release_date": part.get("release_date") or "",
+            "poster_path": part.get("poster_path"),
+            "position": position,
+        })
+    return {
+        "id": item.get("id"),
+        "title": item.get("name") or item.get("original_name") or "",
+        "overview": item.get("overview") or "",
+        "poster_path": item.get("poster_path"),
+        "backdrop_path": item.get("backdrop_path"),
+        "parts": parts,
+    }

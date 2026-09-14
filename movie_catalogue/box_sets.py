@@ -335,10 +335,10 @@ def export_csv(library_id,library,role):
 @require_library_role("editor")
 def import_csv(library_id,library,role):
     file=request.files.get("csv_file")
-    if not file: flash("Choose a box-set CSV file.","error"); return redirect(url_for("catalog.library_home",library_id=library_id))
+    if not file: flash("Choose a box-set CSV file.","error"); return redirect(url_for("catalog.import_page",library_id=library_id))
     try: rows=list(csv.DictReader(io.StringIO(file.read().decode("utf-8-sig"))))
-    except Exception: flash("Could not read that CSV.","error"); return redirect(url_for("catalog.library_home",library_id=library_id))
-    if not rows or not set(CSV_HEADERS).issubset(rows[0].keys()): flash("That is not a Homebuster box-set CSV.","error"); return redirect(url_for("catalog.library_home",library_id=library_id))
+    except Exception: flash("Could not read that CSV.","error"); return redirect(url_for("catalog.import_page",library_id=library_id))
+    if not rows or not set(CSV_HEADERS).issubset(rows[0].keys()): flash("That is not a Homebuster box-set CSV.","error"); return redirect(url_for("catalog.import_page",library_id=library_id))
     groups={}
     for row in rows: groups.setdefault(row.get("box_set_key") or f"row-{len(groups)}",[]).append(row)
     db=get_db(); created=0
@@ -356,4 +356,4 @@ def import_csv(library_id,library,role):
         except Exception as exc:
             current_app.logger.warning("Skipping invalid box-set CSV group %s: %s",key,exc)
     flash(f"Imported {created} box sets.","success" if created else "warning")
-    return redirect(url_for("catalog.library_home",library_id=library_id))
+    return redirect(url_for("catalog.import_page",library_id=library_id))

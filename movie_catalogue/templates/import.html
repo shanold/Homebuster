@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+{% block title %}Import · {{ library.name }} · Homebuster{% endblock %}
+{% block content %}
+{% include '_library_nav.html' %}
+<div class="page-heading"><div><h2>Import</h2><p>Bring an existing Homebuster CSV into {{ library.name }}.</p></div></div>
+<div class="form-grid">
+  <section class="panel">
+    <h3>Import Movies CSV</h3>
+    <p class="muted">Imports normal movie and TV inventory rows. If the file contains films that belong to physical box sets, import the Box Sets CSV first so those parent sets already exist.</p>
+    <form method="post" enctype="multipart/form-data" action="{{ url_for('catalog.import_csv',library_id=library.id) }}" class="stack">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="file" name="csv_file" accept=".csv" required>
+      <button class="primary" type="submit">Import Movies CSV</button>
+    </form>
+  </section>
+  <section class="panel">
+    <h3>Import Box Sets CSV</h3>
+    <p class="muted">Imports physical movie collections / box sets and their contained films.</p>
+    <form method="post" enctype="multipart/form-data" action="{{ url_for('box_sets.import_csv',library_id=library.id) }}" class="stack">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="file" name="csv_file" accept=".csv" required>
+      <button class="primary" type="submit">Import Box Sets CSV</button>
+    </form>
+  </section>
+</div>
+<div class="toolbar"><a class="button" href="{{ url_for('catalog.library_home',library_id=library.id) }}">Back to Library</a></div>
+{% endblock %}

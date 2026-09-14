@@ -353,3 +353,10 @@ Blu-ray/DVD combo packs remain a single physical inventory copy. Common scan spe
 - Shelf pages now support bulk adding and removing movies.
 - Add-to-shelf defaults to unshelved movies only; an optional toggle shows movies on other shelves for moving.
 - Deleting a shelf explicitly unassigns its movies and box sets; it never deletes inventory titles.
+
+
+## v0.3.31 — Import Hub + Bulk TMDb Search Type
+- Moves CSV import controls off the main library toolbar into a dedicated Import page.
+- Match / Repair can explicitly search Movie, TV / Box Set, or Movie Collection / Box Set for unresolved titles.
+- Bulk collection matches use the existing physical box-set conversion flow.
+- Already matched titles still refresh using their stored Movie/TV identity.

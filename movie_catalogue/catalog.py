@@ -943,6 +943,13 @@ def export_csv(library_id, library, role):
     return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
+@bp.get("/libraries/<int:library_id>/import")
+@login_required
+@require_library_role("editor")
+def import_page(library_id, library, role):
+    return render_template("import.html", library=library, role=role)
+
+
 @bp.post("/libraries/<int:library_id>/import.csv")
 @login_required
 @require_library_role("editor")
@@ -950,12 +957,12 @@ def import_csv(library_id, library, role):
     upload = request.files.get("csv_file")
     if not upload or not upload.filename.lower().endswith(".csv"):
         flash("Choose a CSV file.", "error")
-        return redirect(url_for("catalog.library_home", library_id=library_id))
+        return redirect(url_for("catalog.import_page", library_id=library_id))
     try:
         text = upload.stream.read().decode("utf-8-sig")
     except UnicodeDecodeError:
         flash("CSV must be UTF-8 text.", "error")
-        return redirect(url_for("catalog.library_home", library_id=library_id))
+        return redirect(url_for("catalog.import_page", library_id=library_id))
     db = get_db(); count = 0; skipped_contained = 0
     for row in csv.DictReader(io.StringIO(text)):
         title = (row.get("title") or "").strip()
@@ -1014,7 +1021,7 @@ def import_csv(library_id, library, role):
     if skipped_contained:
         message += f" Skipped {skipped_contained} contained films because their parent box set was not found; import the Box Sets CSV first."
     flash(message, "success" if count else "warning")
-    return redirect(url_for("catalog.library_home", library_id=library_id))
+    return redirect(url_for("catalog.import_page", library_id=library_id))
 
 
 @bp.get("/libraries/<int:library_id>/match-repair")
@@ -1051,6 +1058,7 @@ def match_repair_batch(library_id, library, role):
         after_id = 0
     refresh_matched = bool(payload.get("refresh_matched", False))
     auto_match = bool(payload.get("auto_match", True))
+    bulk_search_type = _identify_type(payload.get("search_type") or "movie")
 
     db = get_db()
     if refresh_matched:
@@ -1071,9 +1079,12 @@ def match_repair_batch(library_id, library, role):
         counts["processed"] += 1
         try:
             tmdb_id = movie["tmdb_id"]
-            media_type = _media_type(movie["media_type"] if "media_type" in movie.keys() else "movie")
+            stored_media_type = _media_type(movie["media_type"] if "media_type" in movie.keys() else "movie")
             data = None
             if tmdb_id:
+                # Refresh already-matched rows using their stored identity, regardless of
+                # the endpoint selected for currently-unmatched titles in this run.
+                media_type = stored_media_type
                 details_key = (media_type, tmdb_id)
                 if details_key not in details_cache:
                     details_cache[details_key] = _tmdb_details(tmdb_id, media_type=media_type)
@@ -1081,8 +1092,13 @@ def match_repair_batch(library_id, library, role):
                 if data:
                     counts["refreshed"] += 1
             else:
-                query_titles, query_year = _match_queries_for_movie(movie)
-                choice = _find_high_confidence_match(query_titles, query_year, search_cache, media_type=media_type)
+                if bulk_search_type == "collection":
+                    query_titles, _ = _match_queries_for_movie(movie, media_type="collection")
+                    choice = _find_high_confidence_collection_match(query_titles, search_cache)
+                else:
+                    media_type = _media_type(bulk_search_type)
+                    query_titles, query_year = _match_queries_for_movie(movie, media_type=media_type)
+                    choice = _find_high_confidence_match(query_titles, query_year, search_cache, media_type=media_type)
                 if not choice:
                     db.execute(
                         "UPDATE movies SET review_pending=1, updated_at=CURRENT_TIMESTAMP WHERE id=? AND library_id=?",
@@ -1098,6 +1114,17 @@ def match_repair_batch(library_id, library, role):
                     counts["unmatched"] += 1
                     continue
                 tmdb_id = choice["tmdb_id"]
+                if bulk_search_type == "collection":
+                    details_key = ("collection", tmdb_id)
+                    if details_key not in details_cache:
+                        details_cache[details_key] = tmdb_collection_details(tmdb_id)
+                    collection_data = details_cache[details_key]
+                    if not collection_data:
+                        counts["failed"] += 1
+                        continue
+                    _convert_identified_movie_to_collection(db, movie, collection_data)
+                    counts["matched"] += 1
+                    continue
                 details_key = (media_type, tmdb_id)
                 if details_key not in details_cache:
                     details_cache[details_key] = _tmdb_details(tmdb_id, media_type=media_type)
@@ -1142,6 +1169,7 @@ def match_repair_review(library_id, library, role):
             abort(400)
         movie = _get_movie(library_id, movie_id)
         action = (request.form.get("action") or "match").strip().lower()
+        identify_type = _identify_type(request.form.get("media_type") or (movie["media_type"] if "media_type" in movie.keys() else "movie"))
         if action == "dismiss":
             db.execute(
                 "UPDATE movies SET review_pending=0, updated_at=CURRENT_TIMESTAMP WHERE id=? AND library_id=?",
@@ -1149,10 +1177,9 @@ def match_repair_review(library_id, library, role):
             )
             db.commit()
             flash(f"Removed {movie['title']} from the review list.", "success")
-            return redirect(url_for("catalog.match_repair_review", library_id=library_id, after_id=movie_id))
+            return redirect(url_for("catalog.match_repair_review", library_id=library_id, after_id=movie_id, media_type=identify_type))
 
         tmdb_id = _int_or_none(request.form.get("tmdb_id"))
-        identify_type = _identify_type(request.form.get("media_type") or (movie["media_type"] if "media_type" in movie.keys() else "movie"))
         if not tmdb_id:
             abort(400)
         if identify_type == "collection":
@@ -1173,7 +1200,7 @@ def match_repair_review(library_id, library, role):
                 flash(f"Could not convert this title into a box set: {exc}", "error")
                 return redirect(url_for("catalog.match_repair_review", library_id=library_id, after_id=max(0, movie_id-1), media_type="collection"))
             flash(f"Matched {movie['title']} as the {details.get('title') or 'TMDb Collection'} box set.", "success")
-            return redirect(url_for("catalog.match_repair_review", library_id=library_id, after_id=movie_id))
+            return redirect(url_for("catalog.match_repair_review", library_id=library_id, after_id=movie_id, media_type=identify_type))
 
         media_type = _media_type(identify_type)
         try:
@@ -1190,7 +1217,7 @@ def match_repair_review(library_id, library, role):
         if metadata_changed:
             message += " Copy metadata was recovered too."
         flash(message, "success")
-        return redirect(url_for("catalog.match_repair_review", library_id=library_id, after_id=movie_id))
+        return redirect(url_for("catalog.match_repair_review", library_id=library_id, after_id=movie_id, media_type=identify_type))
 
     try:
         after_id = max(0, int(request.args.get("after_id") or 0))
@@ -1306,6 +1333,37 @@ def _tmdb_collection_search_candidates(query_titles, max_searches=MAX_MATCH_SEAR
             seen.add(key)
             merged.append(item)
     return merged
+
+
+def _find_high_confidence_collection_match(query_titles, search_cache):
+    """Find a decisive collection match without searching Movie or TV endpoints."""
+    merged = []
+    seen_ids = set()
+    searched_titles = []
+    for title in (query_titles or [])[:MAX_MATCH_SEARCHES]:
+        key = ("collection", (title or "").casefold())
+        if key not in search_cache:
+            search_cache[key] = tmdb_collection_search(title)
+        searched_titles.append(title)
+        for item in search_cache[key]:
+            tmdb_id = item.get("id")
+            if tmdb_id in seen_ids:
+                continue
+            seen_ids.add(tmdb_id)
+            merged.append({
+                "tmdb_id": tmdb_id,
+                "title": item.get("name") or item.get("title") or "",
+                "year": None,
+            })
+        confidence_titles = list(searched_titles)
+        for searched in searched_titles:
+            clean = (searched or "").strip()
+            if clean and not clean.casefold().endswith(" collection"):
+                confidence_titles.append(f"{clean} Collection")
+        choice = high_confidence_tmdb_match(confidence_titles, None, merged)
+        if choice:
+            return choice
+    return None
 
 
 def _collection_members_from_details(details):

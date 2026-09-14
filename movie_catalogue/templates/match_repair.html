@@ -11,6 +11,14 @@
   <h3>Library scan</h3>
   <p><strong id="progress-count">0 / {{ unresolved_total }}</strong> titles processed</p>
   <progress id="repair-progress" value="0" max="{{ unresolved_total or 1 }}" style="width:100%"></progress>
+  <label>TMDb search type
+    <select id="search-type" name="search_type">
+      <option value="movie" selected>Movie</option>
+      <option value="tv">TV / Box Set</option>
+      <option value="collection">Movie Collection / Box Set</option>
+    </select>
+  </label>
+  <p class="muted">Controls which single TMDb endpoint Homebuster searches for currently-unmatched titles. It never searches Movie, TV, and Collection together.</p>
   <label class="checkbox-row"><input id="refresh-matched" name="refresh_matched" type="checkbox"> Refresh metadata for already matched movies</label>
   <p class="muted">Off by default. Normal scans only process unresolved or pending-review movies. Enable this to also refresh canonical TMDb title, year, and poster for matched movies.</p>
   <label class="checkbox-row"><input id="auto-match" name="auto_match" type="checkbox" checked> Automatically apply high-confidence matches</label>
@@ -39,6 +47,7 @@
   const button = document.getElementById('start-repair');
   const refreshMatched = document.getElementById('refresh-matched');
   const autoMatch = document.getElementById('auto-match');
+  const searchType = document.getElementById('search-type');
   const status = document.getElementById('repair-status');
   const progress = document.getElementById('repair-progress');
   const count = document.getElementById('progress-count');
@@ -67,7 +76,7 @@
       response = await fetch(endpoint, {
         method: 'POST',
         headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
-        body: JSON.stringify({after_id: afterId, refresh_matched: refreshMatched.checked, auto_match: autoMatch.checked})
+        body: JSON.stringify({after_id: afterId, refresh_matched: refreshMatched.checked, auto_match: autoMatch.checked, search_type: searchType.value})
       });
     } catch (error) {
       running = false;
@@ -93,7 +102,7 @@
       button.disabled = false;
       if (totals.unmatched > 0) {
         button.textContent = `Review ${totals.unmatched} Titles`;
-        completionTarget = reviewUrl;
+        completionTarget = `${reviewUrl}?media_type=${encodeURIComponent(searchType.value)}`;
       } else {
         button.textContent = 'Back to Library';
         completionTarget = libraryUrl;

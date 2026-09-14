@@ -1,14 +1,174 @@
 {% extends 'base.html' %}
+{% block title %}{{ shelf.name }} · Homebuster{% endblock %}
 {% block content %}
 {% include '_library_nav.html' %}
-<div class="page-heading"><div><h2>{{ shelf.name }}</h2><p>{{ shelf.description or 'No description' }} · {{ movies|length }} movies</p></div></div>
+<div class="page-heading shelf-page-heading">
+  <div>
+    <h2>{{ shelf.name }}</h2>
+    <p>{{ shelf.description or 'No description' }} · {{ movies|length }} movies</p>
+  </div>
+  <div class="shelf-view-controls" aria-label="Shelf display controls">
+    <div class="view-switch" role="group" aria-label="Shelf view">
+      <button type="button" class="view-switch-button active" data-shelf-view="list" aria-pressed="true">List View</button>
+      <button type="button" class="view-switch-button" data-shelf-view="shelf" aria-pressed="false">Shelf View</button>
+    </div>
+    <label class="shelf-density-control" for="shelf-density">
+      <span>Movies per row: <strong id="shelf-density-value">28</strong></span>
+      <input id="shelf-density" type="range" min="10" max="40" value="28" step="1">
+    </label>
+  </div>
+</div>
 <div class="toolbar">
   {% if role != 'viewer' %}<a class="button primary" href="{{ url_for('catalog.shelf_add_movies',library_id=library.id,shelf_id=shelf.id) }}">Add movies to shelf</a><a class="button" href="{{ url_for('catalog.shelf_remove_movies',library_id=library.id,shelf_id=shelf.id) }}">Remove movies from shelf</a>{% endif %}
   <a class="button" href="{{ url_for('catalog.library_home',library_id=library.id,shelf=shelf.id) }}">View in Library</a>
   <a class="button" href="{{ url_for('catalog.shelves',library_id=library.id) }}">Back to Shelves</a>
 </div>
-<div class="list-cards">
-{% for movie in movies %}<div class="list-card"><div><h3><a href="{{ url_for('catalog.movie_detail',library_id=library.id,movie_id=movie.id) }}">{{ movie.title }}</a></h3><p>{{ movie.year or 'Year unknown' }} · {{ movie.format or 'Format unknown' }}{% if movie.barcode %} · {{ movie.barcode }}{% endif %}</p></div></div>
-{% else %}<div class="empty"><h2>This shelf is empty</h2><p>{% if role != 'viewer' %}Use Add movies to shelf to place titles here.{% endif %}</p></div>{% endfor %}
+
+<div id="shelf-list-view" class="list-cards shelf-list-view">
+{% for movie in movies %}
+  <div class="list-card shelf-list-card" data-poster="{{ movie.poster_path or '' }}">
+    <div class="shelf-list-card-content">
+      <h3><a href="{{ url_for('catalog.movie_detail',library_id=library.id,movie_id=movie.id) }}">{{ movie.title }}</a></h3>
+      <p>{{ movie.year or 'Year unknown' }} · {{ movie.format or 'Format unknown' }}{% if movie.version %} · {{ movie.version }}{% endif %}{% if movie.barcode %} · {{ movie.barcode }}{% endif %}</p>
+    </div>
+  </div>
+{% else %}
+  <div class="empty"><h2>This shelf is empty</h2><p>{% if role != 'viewer' %}Use Add movies to shelf to place titles here.{% endif %}</p></div>
+{% endfor %}
 </div>
+
+<div id="shelf-visual-view" class="visual-shelf" hidden>
+  {% if movies %}
+  <div class="shelf-row" style="--shelf-columns:28">
+    {% for movie in movies %}
+    <button type="button"
+            class="shelf-case"
+            data-poster="{{ movie.poster_path or '' }}"
+            data-title="{{ movie.title|e }}"
+            data-year="{{ movie.year or '' }}"
+            data-format="{{ movie.format or 'Format unknown' }}"
+            data-version="{{ movie.version or '' }}"
+            data-details="{{ url_for('catalog.movie_detail',library_id=library.id,movie_id=movie.id) }}"
+            aria-label="Preview {{ movie.title }}">
+      <span class="shelf-case-spine"{% if movie.poster_path %} data-spine-poster="{{ movie.poster_path }}"{% endif %}>
+        <span class="shelf-case-format">{{ movie.format or 'Media' }}</span>
+        <span class="shelf-case-title">{{ movie.title }}</span>
+      </span>
+    </button>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty"><h2>This shelf is empty</h2><p>{% if role != 'viewer' %}Use Add movies to shelf to place titles here.{% endif %}</p></div>
+  {% endif %}
+</div>
+
+<dialog id="shelf-case-modal" class="case-preview-dialog">
+  <button type="button" class="case-preview-close" aria-label="Close preview">×</button>
+  <div class="case-preview-shell">
+    <div id="case-preview-format" class="case-format-band">Media</div>
+    <div class="case-preview-art">
+      <img id="case-preview-poster" alt="" hidden>
+      <div id="case-preview-placeholder" class="case-preview-placeholder">🎬</div>
+    </div>
+  </div>
+  <div class="case-preview-info">
+    <h3 id="case-preview-title"></h3>
+    <p id="case-preview-meta" class="muted"></p>
+    <a id="case-preview-details" class="button primary" href="#">Open details</a>
+  </div>
+</dialog>
+
+<script>
+(() => {
+  const STORAGE_VIEW = 'Homebuster.shelfViewMode';
+  const STORAGE_DENSITY = 'Homebuster.shelfDensity';
+  const listView = document.getElementById('shelf-list-view');
+  const shelfView = document.getElementById('shelf-visual-view');
+  const shelfRow = shelfView ? shelfView.querySelector('.shelf-row') : null;
+  const density = document.getElementById('shelf-density');
+  const densityValue = document.getElementById('shelf-density-value');
+  const viewButtons = Array.from(document.querySelectorAll('[data-shelf-view]'));
+
+  document.querySelectorAll('.shelf-list-card[data-poster]').forEach(card => {
+    const poster = card.dataset.poster;
+    if (poster) card.style.setProperty('--shelf-list-poster', `url("${poster.replace(/"/g, '%22')}")`);
+  });
+  document.querySelectorAll('.shelf-case-spine[data-spine-poster]').forEach(spine => {
+    const poster = spine.dataset.spinePoster;
+    if (poster) spine.style.setProperty('--shelf-spine-poster', `url("${poster.replace(/"/g, '%22')}")`);
+  });
+
+  const effectiveColumns = requested => {
+    if (window.innerWidth <= 620) return Math.min(requested, 10);
+    if (window.innerWidth <= 950) return Math.min(requested, 18);
+    return requested;
+  };
+
+  const applyDensity = raw => {
+    const requested = Math.max(10, Math.min(40, Number(raw) || 28));
+    density.value = requested;
+    densityValue.textContent = requested;
+    if (shelfRow) shelfRow.style.setProperty('--shelf-columns', effectiveColumns(requested));
+    return requested;
+  };
+
+  const applyView = mode => {
+    const next = mode === 'shelf' ? 'shelf' : 'list';
+    listView.hidden = next !== 'list';
+    shelfView.hidden = next !== 'shelf';
+    document.body.classList.toggle('shelf-view-active', next === 'shelf');
+    viewButtons.forEach(button => {
+      const active = button.dataset.shelfView === next;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+    return next;
+  };
+
+  const savedDensity = localStorage.getItem(STORAGE_DENSITY) || density.value;
+  applyDensity(savedDensity);
+  applyView(localStorage.getItem(STORAGE_VIEW) || 'list');
+
+  density.addEventListener('input', () => {
+    const requested = applyDensity(density.value);
+    localStorage.setItem(STORAGE_DENSITY, requested);
+  });
+  window.addEventListener('resize', () => applyDensity(density.value));
+  viewButtons.forEach(button => button.addEventListener('click', () => {
+    const mode = applyView(button.dataset.shelfView);
+    localStorage.setItem(STORAGE_VIEW, mode);
+  }));
+
+  const modal = document.getElementById('shelf-case-modal');
+  const modalPoster = document.getElementById('case-preview-poster');
+  const modalPlaceholder = document.getElementById('case-preview-placeholder');
+  const modalFormat = document.getElementById('case-preview-format');
+  const modalTitle = document.getElementById('case-preview-title');
+  const modalMeta = document.getElementById('case-preview-meta');
+  const modalDetails = document.getElementById('case-preview-details');
+
+  document.querySelectorAll('.shelf-case').forEach(caseButton => caseButton.addEventListener('click', () => {
+    const poster = caseButton.dataset.poster;
+    modalFormat.textContent = caseButton.dataset.format || 'Media';
+    modalTitle.textContent = caseButton.dataset.title || 'Untitled';
+    modalMeta.textContent = [caseButton.dataset.year, caseButton.dataset.version].filter(Boolean).join(' · ');
+    modalDetails.href = caseButton.dataset.details;
+    if (poster) {
+      modalPoster.src = poster;
+      modalPoster.alt = `Poster for ${caseButton.dataset.title || 'movie'}`;
+      modalPoster.hidden = false;
+      modalPlaceholder.hidden = true;
+    } else {
+      modalPoster.removeAttribute('src');
+      modalPoster.hidden = true;
+      modalPlaceholder.hidden = false;
+    }
+    modal.showModal();
+  }));
+  modal.querySelector('.case-preview-close').addEventListener('click', () => modal.close());
+  modal.addEventListener('click', event => {
+    if (event.target === modal) modal.close();
+  });
+})();
+</script>
 {% endblock %}

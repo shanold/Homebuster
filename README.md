@@ -360,3 +360,12 @@ Blu-ray/DVD combo packs remain a single physical inventory copy. Common scan spe
 - Match / Repair can explicitly search Movie, TV / Box Set, or Movie Collection / Box Set for unresolved titles.
 - Bulk collection matches use the existing physical box-set conversion flow.
 - Already matched titles still refresh using their stored Movie/TV identity.
+
+
+## v0.3.32 — Interactive Shelf View
+- Shelf pages can switch between the familiar list view and a visual bookshelf view.
+- Shelf View creates compact Homebuster-generated spines from the poster art already stored for each title; it does not depend on unavailable real package-spine artwork.
+- Clicking a shelf spine opens a full-poster case preview with the physical media format banded across the top and a link to normal details/loan actions.
+- A live 10–40 movies-per-row slider changes shelf density immediately and adapts to narrower screens.
+- View mode and density are remembered in the browser with localStorage.
+- List View adds a subtle cropped poster-art slice in the unused background area while keeping metadata readable.

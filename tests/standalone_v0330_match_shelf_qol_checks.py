@@ -63,5 +63,5 @@ assert 'DELETE FROM movies' not in delete_source, 'Shelf deletion must never del
 assert 'will remain in your library' in SHELVES.lower(), 'Shelf delete confirmation does not explain movie preservation'
 assert 'movie_count' in SHELVES, 'Shelf delete confirmation does not expose affected count'
 
-assert any(v in CONFIG for v in ('APP_VERSION = "0.3.30"','APP_VERSION = "0.3.31"'))
+assert any(v in CONFIG for v in ('APP_VERSION = "0.3.30"','APP_VERSION = "0.3.31"','APP_VERSION = "0.3.32"'))
 print('v0.3.30 Match/Repair + shelf QoL checks passed')

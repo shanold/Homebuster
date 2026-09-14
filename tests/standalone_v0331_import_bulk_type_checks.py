@@ -35,5 +35,5 @@ assert 'media_type=identify_type' in CATALOG
 assert 'if tmdb_id:' in CATALOG
 assert 'media_type = _media_type(movie["media_type"]' in CATALOG
 
-assert 'APP_VERSION = "0.3.31"' in CONFIG
+assert any(v in CONFIG for v in ('APP_VERSION = "0.3.31"', 'APP_VERSION = "0.3.32"'))
 print('v0.3.31 import hub + bulk TMDb type checks passed')

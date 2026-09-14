@@ -375,3 +375,8 @@ Blu-ray/DVD combo packs remain a single physical inventory copy. Common scan spe
 - Shelf View controls no longer depend on localStorage being available; view switching and density controls still work when browser storage is blocked or unavailable.
 - View and density persistence remain best-effort when localStorage is available.
 - The main library toolbar now has one Export button leading to a dedicated Export page for Movies CSV and Box Sets CSV downloads.
+
+
+## v0.3.34 — Shelf View display fix + brighter list artwork
+- Fixes the Shelf View toggle when component CSS such as `.list-cards { display: flex; }` overrides the browser default styling of the HTML `hidden` attribute. Homebuster now gives `[hidden]` an explicit `display: none !important` rule.
+- Brightens the poster-derived artwork in Shelf List View while keeping a stronger dark gradient behind title and metadata text.

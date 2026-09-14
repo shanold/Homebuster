@@ -298,3 +298,13 @@ After the signing key is configured, build with `./gradlew assembleRelease`.
 - Progress totals reflect the selected scan mode instead of always using the full library size.
 - The persistent review queue now has an editable TMDb search-title box, so spelling/title corrections can be searched without leaving the review workflow.
 - Android is unchanged from v0.3.20 / versionCode 15 for this server-only release.
+
+## v0.3.24 TV / box-set inventory support
+
+Homebuster can now inventory either **Movies** or **TV / Box Sets** while keeping the existing physical-copy model. Existing database rows migrate automatically to `media_type=movie`. Movie remains the default TMDb search everywhere; Homebuster only uses TMDb TV when the user explicitly selects TV / Box Set, avoiding an automatic double-search of both APIs.
+
+Web Add, Identify, and the persistent Match / Repair review queue have a Movie/TV selector. TV results normalize TMDb's series name and first-air year into Homebuster's existing title display. Once matched, the item remembers its media type, and optional matched-metadata refresh uses the correct Movie or TV endpoint. Grouping uses both media type and TMDb ID so a movie and TV series with the same numeric TMDb ID cannot collide. CSV import/export also preserves media type.
+
+Android is updated to **v0.3.24 (versionCode 16)**. Movie/TV identity is carried through the API, collection grouping, details/cards, barcode search, and Add this copy. Barcode lookup defaults to Movie; selecting TV / Box Set explicitly reruns the match against TMDb TV. Continue signing release APKs with the same existing Homebuster release keystore.
+
+The Match / Repair **Refresh metadata for already matched movies** checkbox is also visually corrected so the checkbox sits inline with its label. It remains off by default.

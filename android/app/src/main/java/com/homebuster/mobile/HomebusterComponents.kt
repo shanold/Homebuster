@@ -112,6 +112,8 @@ fun HomebusterMovieCard(group: MovieGroup, onClick: () -> Unit) {
             ) { Text("🎬", style = MaterialTheme.typography.displaySmall, color = HbMuted) }
         }
         Column(Modifier.padding(12.dp)) {
+            HomebusterMetaChip(if (movie.mediaType == "tv") "TV" else "Movie", HbAccent)
+            Spacer(Modifier.height(5.dp))
             Text(movie.title, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(4.dp))
             movie.year?.let { Text(it.toString(), color = HbMuted, style = MaterialTheme.typography.bodySmall) }

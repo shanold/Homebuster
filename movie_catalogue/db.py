@@ -119,6 +119,7 @@ def _create_catalog_tables(db: sqlite3.Connection) -> None:
             format TEXT,
             poster_path TEXT,
             tmdb_id INTEGER,
+            media_type TEXT NOT NULL DEFAULT 'movie' CHECK(media_type IN ('movie','tv')),
             status TEXT NOT NULL DEFAULT 'owned',
             version TEXT,
             country TEXT,
@@ -182,6 +183,9 @@ def _ensure_catalog_columns(db: sqlite3.Connection) -> None:
     movie_cols = table_columns(db, "movies")
     if movie_cols and "review_pending" not in movie_cols:
         db.execute("ALTER TABLE movies ADD COLUMN review_pending INTEGER NOT NULL DEFAULT 0")
+    movie_cols = table_columns(db, "movies")
+    if movie_cols and "media_type" not in movie_cols:
+        db.execute("ALTER TABLE movies ADD COLUMN media_type TEXT NOT NULL DEFAULT 'movie'")
 
 
 def _bootstrap_admin(db: sqlite3.Connection) -> None:

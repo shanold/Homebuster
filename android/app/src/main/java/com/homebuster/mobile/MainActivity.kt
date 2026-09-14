@@ -49,8 +49,8 @@ private fun normalizeGroupTitle(title: String): String =
 
 private fun groupMovies(movies: List<Movie>): List<MovieGroup> {
     return movies.groupBy { movie ->
-        movie.tmdbId?.let { "tmdb:$it" }
-            ?: "manual:${normalizeGroupTitle(movie.title)}:${movie.year ?: ""}"
+        movie.tmdbId?.let { "tmdb:${movie.mediaType}:$it" }
+            ?: "manual:${movie.mediaType}:${normalizeGroupTitle(movie.title)}:${movie.year ?: ""}"
     }.map { (key, copies) ->
         val primary = copies.firstOrNull { it.posterUrl != null } ?: copies.first()
         MovieGroup(key, primary, copies.sortedWith(compareBy<Movie> { it.format.lowercase() }.thenBy { it.version ?: "" }))
@@ -106,7 +106,7 @@ fun HomebusterApp(store: SessionStore) {
             Screen.COLLECTIONS -> CollectionsScreen(api!!, token!!, navigateBack)
             Screen.LOANS -> LoansScreen(api!!, token!!, navigateBack)
             Screen.SCANNER -> ScannerScreen(onCode = { code ->
-                scanned = BarcodeResponse("loading", code, null, null, null, null)
+                scanned = BarcodeResponse(status = "loading", upc = code, movie = null, product = null, lookup = null)
                 screen = Screen.BARCODE_RESULT
             }, onBack = navigateBack)
             Screen.BARCODE_RESULT -> BarcodeResultScreen(api!!, token!!, scanned?.upc.orEmpty(), { scanned = it }, navigateBack)
@@ -140,7 +140,7 @@ private fun LoginScreen(
         Column(Modifier.fillMaxSize().padding(horizontal = horizontal), verticalArrangement = Arrangement.Center) {
             HomebusterPanel {
                 Text("Homebuster", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.ExtraBold)
-                Text("Your movie library, in your pocket.", color = HbMuted)
+                Text("Your movie & TV library, in your pocket.", color = HbMuted)
                 Text("App v${BuildConfig.VERSION_NAME}", color = HbMuted, style = MaterialTheme.typography.bodySmall)
                 if (Build.VERSION.SDK_INT >= 37 && !localNetworkGranted) {
                     Spacer(Modifier.height(18.dp))
@@ -256,7 +256,7 @@ private fun MovieDetailScreen(group: MovieGroup, onBack: () -> Unit) {
         }
         item {
             HomebusterPanel {
-                Text(if (group.copies.size == 1) "Physical copy" else "Physical copies", fontWeight = FontWeight.Bold)
+                Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) { HomebusterMetaChip(if (movie.mediaType == "tv") "TV" else "Movie", HbAccent); Text(if (group.copies.size == 1) "Physical copy" else "Physical copies", fontWeight = FontWeight.Bold) }
                 Spacer(Modifier.height(8.dp))
                 group.copies.forEachIndexed { index, copy ->
                     if (index > 0) { Spacer(Modifier.height(10.dp)); HorizontalDivider(color = HbLine); Spacer(Modifier.height(10.dp)) }
@@ -316,10 +316,13 @@ private fun BarcodeResultScreen(api: HomebusterApi, token: String, upc: String, 
     var addError by remember { mutableStateOf<String?>(null) }
     var addingTmdbId by remember { mutableStateOf<Int?>(null) }
     var addedMovie by remember { mutableStateOf<Movie?>(null) }
+    var mediaType by remember { mutableStateOf("movie") }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(upc) {
-        try { result = api.barcode("Bearer $token", upc); onLoaded(result!!) }
+    LaunchedEffect(upc, mediaType) {
+        result = null
+        error = null
+        try { result = api.barcode("Bearer $token", upc, mediaType); onLoaded(result!!) }
         catch (e: HttpException) { error = if (e.code() == 404) "Barcode $upc is not in your library and the server could not identify it." else friendly(e) }
         catch (e: Exception) { error = friendly(e) }
     }
@@ -327,6 +330,19 @@ private fun BarcodeResultScreen(api: HomebusterApi, token: String, upc: String, 
     LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { HomebusterScreenHeader("Barcode lookup", onBack) }
         item { Text("UPC $upc", color = HbMuted, style = MaterialTheme.typography.bodySmall) }
+        item {
+            HomebusterPanel {
+                Text("TMDb search type", fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (mediaType == "movie") Button(onClick = { mediaType = "movie" }, modifier = Modifier.weight(1f)) { Text("Movie") }
+                    else OutlinedButton(onClick = { mediaType = "movie" }, modifier = Modifier.weight(1f)) { Text("Movie") }
+                    if (mediaType == "tv") Button(onClick = { mediaType = "tv" }, modifier = Modifier.weight(1f)) { Text("TV / Box Set") }
+                    else OutlinedButton(onClick = { mediaType = "tv" }, modifier = Modifier.weight(1f)) { Text("TV / Box Set") }
+                }
+                Text("Movie is the default. Switching to TV sends the lookup only to TMDb TV.", color = HbMuted, style = MaterialTheme.typography.bodySmall)
+            }
+        }
 
         addedMovie?.let { movie ->
             item {
@@ -381,7 +397,7 @@ private fun BarcodeResultScreen(api: HomebusterApi, token: String, upc: String, 
                         r.lookup?.let { lookup ->
                             Spacer(Modifier.height(12.dp))
                             Text("Homebuster detected", color = HbAccent, fontWeight = FontWeight.Bold)
-                            Text("Movie: ${lookup.title}")
+                            Text("${if (mediaType == "tv") "TV series" else "Movie"}: ${lookup.title}")
                             lookup.year?.let { Text("Year: $it") }
                             lookup.format?.takeIf { it.isNotBlank() }?.let { Text("Format: $it") }
                             lookup.language?.takeIf { it.isNotBlank() }?.let { Text("Language: $it") }
@@ -425,6 +441,8 @@ private fun BarcodeResultScreen(api: HomebusterApi, token: String, upc: String, 
                                     HomebusterMetaChip("Best match", HbGood)
                                     Spacer(Modifier.height(6.dp))
                                 }
+                                HomebusterMetaChip(if (match.mediaType == "tv") "TV" else "Movie", HbAccent)
+                                Spacer(Modifier.height(4.dp))
                                 Text(match.title, fontWeight = FontWeight.Bold)
                                 match.year?.let { Text(it.toString(), color = HbMuted) }
                                 if (match.overview.isNotBlank()) {
@@ -446,6 +464,7 @@ private fun BarcodeResultScreen(api: HomebusterApi, token: String, upc: String, 
                                             "Bearer $token",
                                             AddMovieRequest(
                                                 tmdbId = match.tmdbId,
+                                                mediaType = match.mediaType.ifBlank { mediaType },
                                                 title = match.title,
                                                 year = match.year,
                                                 overview = match.overview,

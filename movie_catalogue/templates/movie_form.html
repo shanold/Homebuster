@@ -5,7 +5,7 @@
 <section class="panel"><div class="page-heading"><div><h2>{{ 'Edit ' + movie.title if movie else 'Add Movie' }}</h2>{% if not movie and values.tmdb_id %}<p>TMDb filled in the basics. Review them and add your physical-copy details.</p>{% endif %}</div>{% if not movie %}<a class="button" href="{{ url_for('catalog.movie_new', library_id=library.id) }}">← Back to TMDb search</a>{% endif %}</div>
 <form method="post" action="{{ url_for('catalog.movie_edit', library_id=library.id, movie_id=movie.id) if movie else url_for('catalog.movie_new', library_id=library.id) }}" class="form-grid">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-<label class="wide">Title<input name="title" required value="{{ values.title if values.title else '' }}"></label>
+<label>Type<select name="media_type"><option value="movie" {% if values.media_type != 'tv' %}selected{% endif %}>Movie</option><option value="tv" {% if values.media_type == 'tv' %}selected{% endif %}>TV / Box Set</option></select></label><label>Title<input name="title" required value="{{ values.title if values.title else '' }}"></label>
 <label>Year<input name="year" value="{{ values.year if values.year else '' }}"></label>
 <label>Barcode<input name="barcode" value="{{ values.barcode if values.barcode else '' }}"></label>
 <label>Format<select name="format">{% for f in ['Blu-ray','4K','4K UHD','DVD','HD DVD','VHS','Other'] %}<option {% if values.format==f %}selected{% elif not values.format and f=='Blu-ray' %}selected{% endif %}>{{ f }}</option>{% endfor %}</select></label>

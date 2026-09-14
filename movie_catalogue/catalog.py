@@ -25,19 +25,20 @@ MAX_MATCH_SEARCHES = 3
 BULK_REPAIR_BATCH_SIZE = 8
 
 MOVIE_FIELDS = [
-    "barcode", "title", "year", "format", "poster_path", "tmdb_id", "status",
+    "barcode", "title", "year", "format", "poster_path", "tmdb_id", "media_type", "status",
     "version", "country", "language", "region", "disc_count", "notes", "shelf_id",
 ]
 
 
 
 def _group_movie_rows(rows):
+    # Group identity is (movie.get("media_type") or "movie", movie.get("tmdb_id")) when TMDb-backed.
     """Group physical copies for catalogue display without merging database rows."""
     groups = []
     by_key = {}
     for raw in rows:
         movie = dict(raw)
-        key = ("tmdb", movie.get("tmdb_id")) if movie.get("tmdb_id") else ("copy", movie.get("id"))
+        key = ("tmdb", movie.get("media_type") or "movie", movie.get("tmdb_id")) if movie.get("tmdb_id") else ("copy", movie.get("id"))
         group = by_key.get(key)
         if group is None:
             group = dict(movie)
@@ -60,6 +61,10 @@ def _group_movie_rows(rows):
 
 
 
+def _media_type(value):
+    return "tv" if str(value or "").strip().lower() == "tv" else "movie"
+
+
 def _match_queries_for_movie(movie):
     """Build multiple safe TMDb search candidates for an existing movie.
 
@@ -73,7 +78,7 @@ def _match_queries_for_movie(movie):
     return query_titles, query_year
 
 
-def _tmdb_search_candidates(query_titles, year=None, max_searches=None):
+def _tmdb_search_candidates(query_titles, year=None, max_searches=None, media_type="movie"):
     """Search candidate titles and merge TMDb movies without duplicate IDs."""
     merged = []
     seen_ids = set()
@@ -84,7 +89,7 @@ def _tmdb_search_candidates(query_titles, year=None, max_searches=None):
         if max_searches is not None and searched >= max_searches:
             break
         searched += 1
-        for item in _tmdb_search(title, year):
+        for item in _tmdb_search(title, year, media_type=media_type):
             tmdb_id = item.get("id")
             key = ("id", tmdb_id) if tmdb_id is not None else ("title", item.get("title"), item.get("release_date"))
             if key in seen_ids:
@@ -106,15 +111,15 @@ def _normalized_tmdb_matches(items):
     return normalized
 
 
-def _find_high_confidence_match(query_titles, query_year, search_cache):
+def _find_high_confidence_match(query_titles, query_year, search_cache, media_type="movie"):
     """Search at most MAX_MATCH_SEARCHES candidates, stopping on a decisive match."""
     merged = []
     seen_ids = set()
     searched_titles = []
     for title in query_titles[:MAX_MATCH_SEARCHES]:
-        key = ((title or "").casefold(), str(query_year or ""))
+        key = (_media_type(media_type), (title or "").casefold(), str(query_year or ""))
         if key not in search_cache:
-            search_cache[key] = _tmdb_search(title, query_year)
+            search_cache[key] = _tmdb_search(title, query_year, media_type=media_type)
         searched_titles.append(title)
         for item in search_cache[key]:
             item_key = item.get("id") or (item.get("title"), item.get("release_date"))
@@ -158,7 +163,8 @@ def _copy_metadata_fill_values(movie, raw_title, canonical_title):
     return values, inferred, changed
 
 
-def _apply_identified_movie(db, movie, data, tmdb_id):
+def _apply_identified_movie(db, movie, data, tmdb_id, media_type=None):
+    media_type = _media_type(media_type or movie["media_type"] if "media_type" in movie.keys() else "movie")
     canonical_title = data.get("title") or movie["title"]
     values, inferred, metadata_changed = _copy_metadata_fill_values(movie, movie["title"], canonical_title)
     poster = _tmdb_poster_url(data.get("poster_path") or movie["poster_path"])
@@ -166,10 +172,10 @@ def _apply_identified_movie(db, movie, data, tmdb_id):
     year = release[:4] if len(release) >= 4 and release[:4].isdigit() else movie["year"]
     db.execute(
         """UPDATE movies
-           SET title=?,year=?,poster_path=?,tmdb_id=?,format=?,version=?,language=?,region=?,disc_count=?,review_pending=0,updated_at=CURRENT_TIMESTAMP
+           SET title=?,year=?,poster_path=?,tmdb_id=?,media_type=?,format=?,version=?,language=?,region=?,disc_count=?,review_pending=0,updated_at=CURRENT_TIMESTAMP
            WHERE id=? AND library_id=?""",
         (
-            canonical_title, year, poster or movie["poster_path"], tmdb_id,
+            canonical_title, year, poster or movie["poster_path"], tmdb_id, media_type,
             values["format"], values["version"], values["language"], values["region"], values["disc_count"],
             movie["id"], movie["library_id"],
         ),
@@ -235,6 +241,7 @@ def _movie_form_values(form):
         "format": (form.get("format") or "Blu-ray").strip(),
         "poster_path": (form.get("poster_path") or "").strip() or None,
         "tmdb_id": _int_or_none(form.get("tmdb_id")),
+        "media_type": _media_type(form.get("media_type")),
         "status": (form.get("status") or "owned").strip(),
         "version": (form.get("version") or "").strip() or None,
         "country": (form.get("country") or "").strip() or None,
@@ -336,11 +343,12 @@ def movie_new(library_id, library, role):
     # and old clients that submit the movie form are not broken.
     if request.method == "GET":
         query = (request.args.get("q") or "").strip()
+        media_type = _media_type(request.args.get("media_type"))
         api_configured = bool(current_app.config.get("TMDB_API_KEY"))
         results = []
         if query and api_configured:
             try:
-                results = _tmdb_search(query)
+                results = _tmdb_search(query, media_type=media_type)
             except requests.RequestException:
                 flash("TMDb search failed. Try again later or add the movie manually.", "error")
         return render_template(
@@ -348,6 +356,7 @@ def movie_new(library_id, library, role):
             library=library,
             role=role,
             query=query,
+            media_type=media_type,
             results=results,
             api_configured=api_configured,
             poster_size=current_app.config.get("TMDB_POSTER_SIZE", "w342"),
@@ -367,15 +376,15 @@ def movie_new(library_id, library, role):
         cur = db.execute(
             """
             INSERT INTO movies (
-                library_id,barcode,title,year,format,poster_path,tmdb_id,status,
+                library_id,barcode,title,year,format,poster_path,tmdb_id,media_type,status,
                 version,country,language,region,disc_count,notes,shelf_id
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (library_id, *[values[k] for k in MOVIE_FIELDS]),
         )
         _sync_collections(db, library_id, cur.lastrowid, request.form)
         db.commit()
-        flash("Movie added.", "success")
+        flash("Title added.", "success")
         return redirect(url_for("catalog.movie_detail", library_id=library_id, movie_id=cur.lastrowid))
 
     shelves = db.execute(
@@ -403,7 +412,8 @@ def movie_new(library_id, library, role):
 @require_library_role("editor")
 def movie_new_manual(library_id, library, role):
     db = get_db()
-    prefill = {}
+    media_type = _media_type(request.args.get("media_type"))
+    prefill = {"media_type": media_type}
     tmdb_id = request.args.get("tmdb_id", type=int)
 
     if tmdb_id:
@@ -411,7 +421,7 @@ def movie_new_manual(library_id, library, role):
             flash("TMDb lookup is unavailable because TMDB_API_KEY is not configured.", "warning")
         else:
             try:
-                data = _tmdb_details(tmdb_id)
+                data = _tmdb_details(tmdb_id, media_type=media_type)
             except requests.RequestException:
                 data = None
                 flash("TMDb lookup failed. You can still add the movie manually.", "error")
@@ -420,6 +430,7 @@ def movie_new_manual(library_id, library, role):
                 prefill = {
                     "title": data.get("title") or "",
                     "year": (data.get("release_date") or "")[:4],
+                    "media_type": media_type,
                     "format": "Blu-ray",
                     "status": "owned",
                     "poster_path": _tmdb_poster_url(data.get("poster_path")),
@@ -463,8 +474,8 @@ def movie_detail(library_id, movie_id, library, role):
     copies = [movie]
     if movie["tmdb_id"]:
         copies = db.execute(
-            "SELECT * FROM movies WHERE library_id=? AND tmdb_id=? ORDER BY id",
-            (library_id, movie["tmdb_id"]),
+            "SELECT * FROM movies WHERE library_id=? AND media_type=? AND tmdb_id=? ORDER BY id",
+            (library_id, _media_type(movie["media_type"]), movie["tmdb_id"]),
         ).fetchall()
     display_poster = movie["poster_path"] or next((copy["poster_path"] for copy in copies if copy["poster_path"]), None)
     return render_template("movie_detail.html", library=library, role=role, movie=movie, shelf=shelf, collections=collections, loans=loans, active_loan=active_loan, copies=copies, display_poster=display_poster)
@@ -486,7 +497,7 @@ def movie_edit(library_id, movie_id, library, role):
                     values["shelf_id"] = None
             db.execute(
                 """
-                UPDATE movies SET barcode=?,title=?,year=?,format=?,poster_path=?,tmdb_id=?,status=?,
+                UPDATE movies SET barcode=?,title=?,year=?,format=?,poster_path=?,tmdb_id=?,media_type=?,status=?,
                     version=?,country=?,language=?,region=?,disc_count=?,notes=?,shelf_id=?,updated_at=CURRENT_TIMESTAMP
                 WHERE id=? AND library_id=?
                 """,
@@ -662,7 +673,7 @@ def collection_delete(library_id, collection_id, library, role):
 @require_library_role("viewer")
 def export_csv(library_id, library, role):
     db = get_db(); output = io.StringIO(); writer = csv.writer(output)
-    headers = ["barcode","title","year","format","poster_path","tmdb_id","status","version","country","language","region","disc_count","notes","shelf","collections"]
+    headers = ["barcode","title","year","format","poster_path","tmdb_id","media_type","status","version","country","language","region","disc_count","notes","shelf","collections"]
     writer.writerow(headers)
     rows = db.execute(
         "SELECT m.*,s.name AS shelf_name FROM movies m LEFT JOIN shelves s ON s.id=m.shelf_id WHERE m.library_id=? ORDER BY m.id",
@@ -703,10 +714,10 @@ def import_csv(library_id, library, role):
                 cur = db.execute("INSERT INTO shelves (library_id,name) VALUES (?,?)", (library_id, shelf_name)); shelf_id = cur.lastrowid
             else: shelf_id = shelf["id"]
         cur = db.execute(
-            """INSERT INTO movies (library_id,barcode,title,year,format,poster_path,tmdb_id,status,version,country,language,region,disc_count,notes,shelf_id)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            """INSERT INTO movies (library_id,barcode,title,year,format,poster_path,tmdb_id,media_type,status,version,country,language,region,disc_count,notes,shelf_id)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (library_id, row.get("barcode") or None, title, row.get("year") or None, row.get("format") or "Blu-ray",
-             row.get("poster_path") or None, _int_or_none(row.get("tmdb_id")), row.get("status") or "owned",
+             row.get("poster_path") or None, _int_or_none(row.get("tmdb_id")), _media_type(row.get("media_type")), row.get("status") or "owned",
              row.get("version") or None, row.get("country") or None, row.get("language") or None,
              row.get("region") or None, _int_or_none(row.get("disc_count")), row.get("notes") or None, shelf_id),
         )
@@ -776,16 +787,18 @@ def match_repair_batch(library_id, library, role):
         counts["processed"] += 1
         try:
             tmdb_id = movie["tmdb_id"]
+            media_type = _media_type(movie["media_type"] if "media_type" in movie.keys() else "movie")
             data = None
             if tmdb_id:
-                if tmdb_id not in details_cache:
-                    details_cache[tmdb_id] = _tmdb_details(tmdb_id)
-                data = details_cache[tmdb_id]
+                details_key = (media_type, tmdb_id)
+                if details_key not in details_cache:
+                    details_cache[details_key] = _tmdb_details(tmdb_id, media_type=media_type)
+                data = details_cache[details_key]
                 if data:
                     counts["refreshed"] += 1
             else:
                 query_titles, query_year = _match_queries_for_movie(movie)
-                choice = _find_high_confidence_match(query_titles, query_year, search_cache)
+                choice = _find_high_confidence_match(query_titles, query_year, search_cache, media_type=media_type)
                 if not choice:
                     db.execute(
                         "UPDATE movies SET review_pending=1, updated_at=CURRENT_TIMESTAMP WHERE id=? AND library_id=?",
@@ -794,15 +807,16 @@ def match_repair_batch(library_id, library, role):
                     counts["unmatched"] += 1
                     continue
                 tmdb_id = choice["tmdb_id"]
-                if tmdb_id not in details_cache:
-                    details_cache[tmdb_id] = _tmdb_details(tmdb_id)
-                data = details_cache[tmdb_id]
+                details_key = (media_type, tmdb_id)
+                if details_key not in details_cache:
+                    details_cache[details_key] = _tmdb_details(tmdb_id, media_type=media_type)
+                data = details_cache[details_key]
                 if data:
                     counts["matched"] += 1
             if not data:
                 counts["failed"] += 1
                 continue
-            metadata_changed, _ = _apply_identified_movie(db, movie, data, tmdb_id)
+            metadata_changed, _ = _apply_identified_movie(db, movie, data, tmdb_id, media_type=media_type)
             if metadata_changed:
                 counts["metadata"] += 1
         except requests.RequestException:
@@ -847,17 +861,18 @@ def match_repair_review(library_id, library, role):
             return redirect(url_for("catalog.match_repair_review", library_id=library_id, after_id=movie_id))
 
         tmdb_id = _int_or_none(request.form.get("tmdb_id"))
+        media_type = _media_type(request.form.get("media_type") or (movie["media_type"] if "media_type" in movie.keys() else "movie"))
         if not tmdb_id:
             abort(400)
         try:
-            data = _tmdb_details(tmdb_id)
+            data = _tmdb_details(tmdb_id, media_type=media_type)
         except requests.RequestException:
             flash("TMDb lookup failed. Try again later.", "error")
             return redirect(url_for("catalog.match_repair_review", library_id=library_id, after_id=movie_id))
         if not data:
             flash("TMDb lookup failed. Try again later.", "error")
             return redirect(url_for("catalog.match_repair_review", library_id=library_id, after_id=movie_id))
-        metadata_changed, _ = _apply_identified_movie(db, movie, data, tmdb_id)
+        metadata_changed, _ = _apply_identified_movie(db, movie, data, tmdb_id, media_type=media_type)
         db.commit()
         message = f"Matched {movie['title']} with TMDb."
         if metadata_changed:
@@ -887,6 +902,7 @@ def match_repair_review(library_id, library, role):
         )
 
     search_title = (request.args.get("search_title") or "").strip()
+    media_type = _media_type(request.args.get("media_type") or (movie["media_type"] if "media_type" in movie.keys() else "movie"))
     if search_title:
         query_titles = search_ready_movie_title_candidates(search_title)
         if search_title not in query_titles:
@@ -895,7 +911,7 @@ def match_repair_review(library_id, library, role):
     else:
         query_titles, query_year = _match_queries_for_movie(movie)
     try:
-        results = _tmdb_search_candidates(query_titles, query_year, max_searches=MAX_MATCH_SEARCHES)
+        results = _tmdb_search_candidates(query_titles, query_year, max_searches=MAX_MATCH_SEARCHES, media_type=media_type)
     except requests.RequestException:
         results = []
         flash("TMDb search failed for this movie. You can skip it and continue.", "error")
@@ -906,33 +922,50 @@ def match_repair_review(library_id, library, role):
     return render_template(
         "match_repair_review.html",
         library=library, role=role, movie=movie, results=results, poster_size=current_app.config.get("TMDB_POSTER_SIZE", "w342"),
-        remaining_review=remaining_review, after_id=after_id, search_title=search_title,
+        remaining_review=remaining_review, after_id=after_id, search_title=search_title, media_type=media_type,
     )
 
 
-def _tmdb_search(title: str, year: str | None = None):
+def _normalize_tmdb_payload(item, media_type="movie"):
+    media_type = _media_type(media_type)
+    if media_type == "tv":
+        title = item.get("name") or item.get("original_name") or ""
+        date = item.get("first_air_date") or ""
+    else:
+        title = item.get("title") or item.get("original_title") or ""
+        date = item.get("release_date") or ""
+    normalized = dict(item)
+    normalized["title"] = title
+    normalized["release_date"] = date
+    normalized["media_type"] = media_type
+    return normalized
+
+
+def _tmdb_search(title: str, year: str | None = None, media_type="movie"):
     api_key = current_app.config.get("TMDB_API_KEY") or ""
     if not api_key:
         return []
+    media_type = _media_type(media_type)
     params = {"api_key": api_key, "query": title}
     if year:
-        params["year"] = year
-    response = requests.get("https://api.themoviedb.org/3/search/movie", params=params, timeout=10)
+        params["first_air_date_year" if media_type == "tv" else "year"] = year
+    response = requests.get(f"https://api.themoviedb.org/3/search/{media_type}", params=params, timeout=10)
     response.raise_for_status()
-    return response.json().get("results", [])[:20]
+    return [_normalize_tmdb_payload(item, media_type) for item in response.json().get("results", [])[:20]]
 
 
-def _tmdb_details(tmdb_id: int):
+def _tmdb_details(tmdb_id: int, media_type="movie"):
     api_key = current_app.config.get("TMDB_API_KEY") or ""
     if not api_key:
         return None
+    media_type = _media_type(media_type)
     response = requests.get(
-        f"https://api.themoviedb.org/3/movie/{tmdb_id}",
+        f"https://api.themoviedb.org/3/{media_type}/{tmdb_id}",
         params={"api_key": api_key},
         timeout=10,
     )
     response.raise_for_status()
-    return response.json()
+    return _normalize_tmdb_payload(response.json(), media_type)
 
 
 def _tmdb_poster_url(poster_path: str | None) -> str | None:
@@ -955,25 +988,27 @@ def identify_movie(library_id, movie_id, library, role):
         return redirect(url_for("catalog.movie_detail", library_id=library_id, movie_id=movie_id))
     if request.method == "POST":
         tmdb_id = _int_or_none(request.form.get("tmdb_id"))
+        media_type = _media_type(request.form.get("media_type") or (movie["media_type"] if "media_type" in movie.keys() else "movie"))
         if not tmdb_id: abort(400)
         try:
-            data = _tmdb_details(tmdb_id)
+            data = _tmdb_details(tmdb_id, media_type=media_type)
         except requests.RequestException:
             flash("TMDb lookup failed. Try again later.", "error")
             return redirect(url_for("catalog.movie_detail", library_id=library_id, movie_id=movie_id))
         if not data:
             flash("TMDb lookup failed. Try again later.", "error")
             return redirect(url_for("catalog.movie_detail", library_id=library_id, movie_id=movie_id))
-        metadata_changed, _ = _apply_identified_movie(db, movie, data, tmdb_id)
+        metadata_changed, _ = _apply_identified_movie(db, movie, data, tmdb_id, media_type=media_type)
         db.commit()
         message = "Movie identified with TMDb."
         if metadata_changed:
             message += " Copy metadata was recovered from the old title."
         flash(message, "success")
         return redirect(url_for("catalog.movie_detail", library_id=library_id, movie_id=movie_id))
+    media_type = _media_type(request.args.get("media_type") or (movie["media_type"] if "media_type" in movie.keys() else "movie"))
     query_titles, query_year = _match_queries_for_movie(movie)
     try:
-        results = _tmdb_search_candidates(query_titles, query_year)
+        results = _tmdb_search_candidates(query_titles, query_year, media_type=media_type)
     except requests.RequestException:
         results = []; flash("TMDb search failed. Try again later.", "error")
     for result in results:
@@ -981,4 +1016,4 @@ def identify_movie(library_id, movie_id, library, role):
             movie["title"], result.get("title") or movie["title"]
         )
     poster_size = current_app.config.get("TMDB_POSTER_SIZE", "w342")
-    return render_template("identify.html", library=library, role=role, movie=movie, results=results, poster_size=poster_size)
+    return render_template("identify.html", library=library, role=role, movie=movie, results=results, poster_size=poster_size, media_type=media_type)

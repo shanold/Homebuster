@@ -27,25 +27,32 @@ def sanitize_barcode_movie_title(raw_title: str) -> tuple[str, int | None]:
     return parsed.title, parsed.year
 
 
-def tmdb_search(query: str, year: int | None = None):
+def tmdb_search(query: str, year: int | None = None, media_type: str = "movie"):
+    media_type = "tv" if str(media_type).lower() == "tv" else "movie"
     key = (current_app.config.get("TMDB_API_KEY") or "").strip()
     if not key:
         return []
+    params = {"api_key": key, "query": query}
+    if year is not None:
+        params["first_air_date_year" if media_type == "tv" else "year"] = year
+    endpoint = "tv" if media_type == "tv" else "movie"
     response = requests.get(
-        "https://api.themoviedb.org/3/search/movie",
-        params={"api_key": key, "query": query, **({"year": year} if year is not None else {})},
+        f"https://api.themoviedb.org/3/search/{endpoint}",
+        params=params,
         timeout=10,
     )
     response.raise_for_status()
     results = []
     for item in response.json().get("results", [])[:20]:
-        date = item.get("release_date") or ""
+        date = item.get("first_air_date") if media_type == "tv" else item.get("release_date")
+        date = date or ""
         results.append({
             "tmdb_id": item.get("id"),
-            "title": item.get("title") or item.get("original_title") or "",
+            "title": (item.get("name") or item.get("original_name") or "") if media_type == "tv" else (item.get("title") or item.get("original_title") or ""),
             "year": int(date[:4]) if len(date) >= 4 and date[:4].isdigit() else None,
             "overview": item.get("overview") or "",
             "poster_path": item.get("poster_path"),
+            "media_type": media_type,
         })
     return results
 

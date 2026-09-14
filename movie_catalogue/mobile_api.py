@@ -92,6 +92,7 @@ def _movie_row(row):
         "library_id": row["library_id"],
         "shelf_id": row["shelf_id"],
         "tmdb_id": row["tmdb_id"],
+        "media_type": row["media_type"] if "media_type" in row.keys() else "movie",
         "title": row["title"],
         "year": int(row["year"]) if row["year"] and str(row["year"]).isdigit() else None,
         "overview": "",
@@ -362,6 +363,7 @@ def add_movie():
         return _json_error("Library is not editable", 403)
 
     barcode = str(data.get("upc") or "").strip() or None
+    media_type = "tv" if str(data.get("media_type") or "movie").strip().lower() == "tv" else "movie"
     disc_count = data.get("disc_count")
     if disc_count in (None, ""):
         disc_count = None
@@ -376,8 +378,8 @@ def add_movie():
     cur = db.execute(
         """
         INSERT INTO movies(
-            library_id,barcode,title,year,format,poster_path,tmdb_id,status,version,language,region,disc_count,notes
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+            library_id,barcode,title,year,format,poster_path,tmdb_id,media_type,status,version,language,region,disc_count,notes
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
         (
             library_id,
@@ -387,6 +389,7 @@ def add_movie():
             str(data.get("format") or "Blu-ray"),
             _mobile_poster_url(data.get("poster_path")),
             data.get("tmdb_id"),
+            media_type,
             "owned",
             str(data.get("version") or "").strip() or None,
             str(data.get("language") or "").strip() or None,
@@ -440,14 +443,15 @@ def tmdb_lookup():
     query = (request.args.get("q") or "").strip()
     if not query:
         return jsonify({"results": []})
+    media_type = "tv" if (request.args.get("media_type") or "movie").strip().lower() == "tv" else "movie"
     try:
-        return jsonify({"results": tmdb_search(query)})
+        return jsonify({"results": tmdb_search(query, media_type=media_type)})
     except Exception as exc:
         current_app.logger.warning("TMDb API lookup failed: %s", exc)
         return _json_error("TMDb lookup failed", 502)
 
 
-def _barcode_tmdb_matches(product: dict) -> tuple[list[dict], list[dict]]:
+def _barcode_tmdb_matches(product: dict, media_type: str = "movie") -> tuple[list[dict], list[dict]]:
     """Use the same candidate generator as web Identify/Repair for scanner TMDb searches."""
     raw_title = str(product.get("product_title") or "").strip()
     year = product.get("search_year")
@@ -466,7 +470,7 @@ def _barcode_tmdb_matches(product: dict) -> tuple[list[dict], list[dict]]:
     merged: dict[object, dict] = {}
     attempts: list[dict] = []
     for query_title, query_year in queries[:3]:
-        raw = tmdb_search(query_title, query_year)
+        raw = tmdb_search(query_title, query_year, media_type=media_type)
         ranked = rank_tmdb_results(query_title, query_year, raw)
         attempts.append({
             "title": query_title,
@@ -488,12 +492,14 @@ def _barcode_tmdb_matches(product: dict) -> tuple[list[dict], list[dict]]:
     )[:20]
     for item in results:
         item["copy_metadata"] = infer_copy_metadata_from_legacy_title(raw_title, item.get("title") or "")
+        item["media_type"] = media_type
     return results, attempts
 
 
 @bp.get("/barcodes/<upc>")
 @token_required
 def barcode_lookup(upc):
+    media_type = "tv" if (request.args.get("media_type") or "movie").strip().lower() == "tv" else "movie"
     upc = "".join(ch for ch in upc if ch.isdigit())
     if len(upc) not in (8, 12, 13, 14):
         return _json_error("Unsupported barcode", 400)
@@ -526,7 +532,7 @@ def barcode_lookup(upc):
     search_title = (product.get("search_title") or product.get("product_title") or "").strip()
     search_year = product.get("search_year")
     try:
-        matches, attempts = _barcode_tmdb_matches(product)
+        matches, attempts = _barcode_tmdb_matches(product, media_type=media_type)
     except Exception as exc:
         current_app.logger.warning("TMDb barcode match lookup failed: %s", exc)
         matches, attempts = [], []
@@ -550,5 +556,6 @@ def barcode_lookup(upc):
             "attempts": attempts,
         },
         "best_match": matches[0] if matches else None,
+        "media_type": media_type,
         "tmdb_results": matches,
     })

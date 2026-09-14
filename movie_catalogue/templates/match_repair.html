@@ -3,13 +3,13 @@
 {% include '_library_nav.html' %}
 <div class="page-heading">
   <div>
-    <h2>Match / Repair Movies</h2>
+    <h2>Match / Repair Titles</h2>
     <p>Homebuster will process this library in small committed batches. Unmatched movies use at most three TMDb title searches, and automatic matches still require high confidence.</p>
   </div>
 </div>
 <section class="panel narrow-progress">
   <h3>Library scan</h3>
-  <p><strong id="progress-count">0 / {{ unresolved_total }}</strong> movies processed</p>
+  <p><strong id="progress-count">0 / {{ unresolved_total }}</strong> titles processed</p>
   <progress id="repair-progress" value="0" max="{{ unresolved_total or 1 }}" style="width:100%"></progress>
   <label class="checkbox-row"><input id="refresh-matched" name="refresh_matched" type="checkbox"> Refresh metadata for already matched movies</label>
   <p class="muted">Off by default. Normal scans only process unresolved or pending-review movies. Enable this to also refresh canonical TMDb title, year, and poster for matched movies.</p>
@@ -58,7 +58,7 @@
 
   async function runNextBatch() {
     if (!running) return;
-    status.textContent = `Processing movies ${totals.processed + 1} onward…`;
+    status.textContent = `Processing titles ${totals.processed + 1} onward…`;
     let response;
     try {
       response = await fetch(endpoint, {
@@ -89,7 +89,7 @@
       running = false;
       button.disabled = false;
       if (totals.unmatched > 0) {
-        button.textContent = `Review ${totals.unmatched} Movies`;
+        button.textContent = `Review ${totals.unmatched} Titles`;
         completionTarget = reviewUrl;
       } else {
         button.textContent = 'Back to Library';

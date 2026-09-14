@@ -124,3 +124,5 @@
     max-height:225px;
   }
 }
+
+.checkbox-row{display:flex;flex-direction:row;align-items:center;gap:8px}.checkbox-row input{width:auto;margin:0}.media-type-toggle{display:flex;align-items:center;gap:8px}

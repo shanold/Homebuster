@@ -12,12 +12,12 @@ data class LoginResponse(val token: String, val user: User)
 data class ServerStatus(@SerializedName("server_version") val serverVersion: String, @SerializedName("api_version") val apiVersion: String, val status: String)
 data class Movie(
     val id: Int, @SerializedName("library_id") val libraryId: Int, @SerializedName("shelf_id") val shelfId: Int?,
-    @SerializedName("tmdb_id") val tmdbId: Int?, val title: String, val year: Int?, val overview: String,
+    @SerializedName("tmdb_id") val tmdbId: Int?, @SerializedName("media_type") val mediaType: String = "movie", val title: String, val year: Int?, val overview: String,
     @SerializedName("poster_path") val posterPath: String?, val runtime: Int?, val format: String,
     val upc: String?, val watched: Boolean, val version: String? = null,
     val language: String? = null, val region: String? = null, @SerializedName("disc_count") val discCount: Int? = null
 ) {
-    val posterUrl: String? get() = posterPath?.let { "https://image.tmdb.org/t/p/w500$it" }
+    val posterUrl: String? get() = posterPath?.let { if (it.startsWith("http://") || it.startsWith("https://")) it else "https://image.tmdb.org/t/p/w500$it" }
 }
 data class MoviesResponse(val movies: List<Movie>)
 data class CollectionItem(val id: Int, @SerializedName("library_id") val libraryId: Int, val name: String, val description: String, @SerializedName("movie_count") val movieCount: Int)
@@ -29,7 +29,7 @@ data class CopyMetadata(
     val language: String? = null, val region: String? = null, @SerializedName("disc_count") val discCount: Int? = null
 )
 data class TmdbResult(
-    @SerializedName("tmdb_id") val tmdbId: Int, val title: String, val year: Int?, val overview: String,
+    @SerializedName("tmdb_id") val tmdbId: Int, @SerializedName("media_type") val mediaType: String = "movie", val title: String, val year: Int?, val overview: String,
     @SerializedName("poster_path") val posterPath: String?, @SerializedName("match_score") val matchScore: Int? = null,
     @SerializedName("copy_metadata") val copyMetadata: CopyMetadata? = null
 )
@@ -44,6 +44,7 @@ data class BarcodeLookup(
 )
 data class BarcodeResponse(
     val status: String,
+    @SerializedName("media_type") val mediaType: String = "movie",
     val upc: String?,
     val movie: Movie?,
     val product: BarcodeProduct?,
@@ -54,7 +55,7 @@ data class BarcodeResponse(
     val message: String? = null
 )
 data class AddMovieRequest(
-    @SerializedName("tmdb_id") val tmdbId: Int?, val title: String, val year: Int?, val overview: String?,
+    @SerializedName("tmdb_id") val tmdbId: Int?, @SerializedName("media_type") val mediaType: String = "movie", val title: String, val year: Int?, val overview: String?,
     @SerializedName("poster_path") val posterPath: String?, val format: String, val upc: String?,
     val version: String? = null, val language: String? = null, val region: String? = null,
     @SerializedName("disc_count") val discCount: Int? = null
@@ -68,8 +69,8 @@ interface HomebusterApi {
     @GET("api/v1/collections") suspend fun collections(@Header("Authorization") auth: String): CollectionsResponse
     @GET("api/v1/collections/{id}/movies") suspend fun collectionMovies(@Header("Authorization") auth: String, @Path("id") id: Int): MoviesResponse
     @GET("api/v1/loans") suspend fun loans(@Header("Authorization") auth: String): LoansResponse
-    @GET("api/v1/tmdb/search") suspend fun tmdb(@Header("Authorization") auth: String, @Query("q") query: String): TmdbResponse
-    @GET("api/v1/barcodes/{upc}") suspend fun barcode(@Header("Authorization") auth: String, @Path("upc") upc: String): BarcodeResponse
+    @GET("api/v1/tmdb/search") suspend fun tmdb(@Header("Authorization") auth: String, @Query("q") query: String, @Query("media_type") mediaType: String = "movie"): TmdbResponse
+    @GET("api/v1/barcodes/{upc}") suspend fun barcode(@Header("Authorization") auth: String, @Path("upc") upc: String, @Query("media_type") mediaType: String = "movie"): BarcodeResponse
     @POST("api/v1/movies") suspend fun addMovie(@Header("Authorization") auth: String, @Body body: AddMovieRequest): Map<String, Movie>
 }
 

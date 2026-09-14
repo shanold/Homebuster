@@ -345,3 +345,11 @@ The server API includes first-class box-set and TMDb Collection endpoints plus e
 Identify with TMDb now has an editable search-title field, matching the persistent review workflow, so an imported or scanned title can be corrected without leaving the Identify screen. TMDb movie/TV searches first use the stored year when available; if that constrained search returns no results, Homebuster retries the same cleaned title on the same endpoint without the year. This fallback is also used by bulk high-confidence matching. Movie Collection searches remain collection-only and do not fan out across endpoints.
 
 Blu-ray/DVD combo packs remain a single physical inventory copy. Common scan spellings such as `Blu-ray DVD`, `Blu-ray + DVD`, `Blu-ray/DVD`, `Blu Ray DVD`, and `Blue-ray DVD` normalize to format **Blu-ray + DVD**, while edition metadata such as **Diamond Edition** remains separate. Manual movie entry now includes **Blu-ray + DVD** in the Format selector. Android source/signing behavior is unchanged from v0.3.25 / versionCode 17.
+
+
+## v0.3.30 — Manual Match Control + Bulk Shelf Sorting
+
+- Match / Repair can keep automatic high-confidence matching enabled (default) or queue every unmatched title for human review.
+- Shelf pages now support bulk adding and removing movies.
+- Add-to-shelf defaults to unshelved movies only; an optional toggle shows movies on other shelves for moving.
+- Deleting a shelf explicitly unassigns its movies and box sets; it never deletes inventory titles.

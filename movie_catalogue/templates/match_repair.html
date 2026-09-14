@@ -13,6 +13,8 @@
   <progress id="repair-progress" value="0" max="{{ unresolved_total or 1 }}" style="width:100%"></progress>
   <label class="checkbox-row"><input id="refresh-matched" name="refresh_matched" type="checkbox"> Refresh metadata for already matched movies</label>
   <p class="muted">Off by default. Normal scans only process unresolved or pending-review movies. Enable this to also refresh canonical TMDb title, year, and poster for matched movies.</p>
+  <label class="checkbox-row"><input id="auto-match" name="auto_match" type="checkbox" checked> Automatically apply high-confidence matches</label>
+  <p class="muted">On by default. Turn this off if you want every currently-unmatched title to stay in the Review queue for human confirmation, even when Homebuster finds a high-confidence TMDb match.</p>
   <div class="stats repair-stats">
     <span>Matched: <strong id="matched">0</strong></span>
     <span>Refreshed: <strong id="refreshed">0</strong></span>
@@ -36,6 +38,7 @@
   const csrf = {{ csrf_token()|tojson }};
   const button = document.getElementById('start-repair');
   const refreshMatched = document.getElementById('refresh-matched');
+  const autoMatch = document.getElementById('auto-match');
   const status = document.getElementById('repair-status');
   const progress = document.getElementById('repair-progress');
   const count = document.getElementById('progress-count');
@@ -64,7 +67,7 @@
       response = await fetch(endpoint, {
         method: 'POST',
         headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
-        body: JSON.stringify({after_id: afterId, refresh_matched: refreshMatched.checked})
+        body: JSON.stringify({after_id: afterId, refresh_matched: refreshMatched.checked, auto_match: autoMatch.checked})
       });
     } catch (error) {
       running = false;

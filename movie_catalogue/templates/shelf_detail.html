@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+{% block content %}
+{% include '_library_nav.html' %}
+<div class="page-heading"><div><h2>{{ shelf.name }}</h2><p>{{ shelf.description or 'No description' }} · {{ movies|length }} movies</p></div></div>
+<div class="toolbar">
+  {% if role != 'viewer' %}<a class="button primary" href="{{ url_for('catalog.shelf_add_movies',library_id=library.id,shelf_id=shelf.id) }}">Add movies to shelf</a><a class="button" href="{{ url_for('catalog.shelf_remove_movies',library_id=library.id,shelf_id=shelf.id) }}">Remove movies from shelf</a>{% endif %}
+  <a class="button" href="{{ url_for('catalog.library_home',library_id=library.id,shelf=shelf.id) }}">View in Library</a>
+  <a class="button" href="{{ url_for('catalog.shelves',library_id=library.id) }}">Back to Shelves</a>
+</div>
+<div class="list-cards">
+{% for movie in movies %}<div class="list-card"><div><h3><a href="{{ url_for('catalog.movie_detail',library_id=library.id,movie_id=movie.id) }}">{{ movie.title }}</a></h3><p>{{ movie.year or 'Year unknown' }} · {{ movie.format or 'Format unknown' }}{% if movie.barcode %} · {{ movie.barcode }}{% endif %}</p></div></div>
+{% else %}<div class="empty"><h2>This shelf is empty</h2><p>{% if role != 'viewer' %}Use Add movies to shelf to place titles here.{% endif %}</p></div>{% endfor %}
+</div>
+{% endblock %}

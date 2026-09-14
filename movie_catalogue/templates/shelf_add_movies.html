@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+{% block content %}
+{% include '_library_nav.html' %}
+<div class="page-heading"><div><h2>Add movies to {{ shelf.name }}</h2><p>By default, only unshelved movies are shown. Movies already on {{ shelf.name }} are never listed here.</p></div></div>
+<form class="filters" method="get">
+  <input name="q" value="{{ q }}" placeholder="Search title, year, or barcode…">
+  <label class="checkbox-row"><input type="checkbox" name="show_other_shelves" value="1" {% if show_other_shelves %}checked{% endif %}> Show movies on other shelves</label>
+  <button>Apply</button>
+  <a class="button" href="{{ url_for('catalog.shelf_add_movies',library_id=library.id,shelf_id=shelf.id) }}">Reset</a>
+</form>
+<form method="post" class="panel">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="toolbar"><button type="button" data-select-all>Select all visible</button><button class="primary">Add selected to shelf</button><a class="button" href="{{ url_for('catalog.shelf_detail',library_id=library.id,shelf_id=shelf.id) }}">Cancel</a></div>
+<div class="list-cards">
+{% for movie in movies %}<label class="list-card bulk-choice"><input type="checkbox" name="movie_ids" value="{{ movie.id }}"><div><h3>{{ movie.title }}</h3><p>{{ movie.year or 'Year unknown' }} · {{ movie.format or 'Format unknown' }}{% if movie.current_shelf_name %} · Currently: <strong>{{ movie.current_shelf_name }}</strong>{% else %} · Unassigned{% endif %}</p></div></label>
+{% else %}<div class="empty"><h2>No movies to add</h2><p>{% if not show_other_shelves %}Everything may already be sorted. Turn on “Show movies on other shelves” if you want to move an existing title here.{% else %}No matching movies were found outside this shelf.{% endif %}</p></div>{% endfor %}
+</div>
+</form>
+<script>document.querySelector('[data-select-all]')?.addEventListener('click',()=>{document.querySelectorAll('input[name="movie_ids"]').forEach(el=>el.checked=true);});</script>
+{% endblock %}

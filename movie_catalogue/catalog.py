@@ -715,6 +715,137 @@ def shelves(library_id, library, role):
     return render_template("shelves.html", library=library, role=role, shelves=rows, unassigned=unassigned)
 
 
+@bp.get("/libraries/<int:library_id>/shelves/<int:shelf_id>")
+@login_required
+@require_library_role("viewer")
+def shelf_detail(library_id, shelf_id, library, role):
+    db = get_db()
+    shelf = db.execute(
+        "SELECT * FROM shelves WHERE id=? AND library_id=?", (shelf_id, library_id)
+    ).fetchone()
+    if not shelf:
+        abort(404)
+    movies = db.execute(
+        """SELECT m.* FROM movies m
+           WHERE m.library_id=? AND m.shelf_id=? AND m.parent_box_set_id IS NULL
+           ORDER BY m.title COLLATE NOCASE, m.year, m.id""",
+        (library_id, shelf_id),
+    ).fetchall()
+    return render_template(
+        "shelf_detail.html", library=library, role=role, shelf=shelf, movies=movies
+    )
+
+
+@bp.route("/libraries/<int:library_id>/shelves/<int:shelf_id>/add-movies", methods=["GET", "POST"])
+@login_required
+@require_library_role("editor")
+def shelf_add_movies(library_id, shelf_id, library, role):
+    db = get_db()
+    shelf = db.execute(
+        "SELECT * FROM shelves WHERE id=? AND library_id=?", (shelf_id, library_id)
+    ).fetchone()
+    if not shelf:
+        abort(404)
+
+    if request.method == "POST":
+        movie_ids = []
+        for raw in request.form.getlist("movie_ids"):
+            try:
+                movie_ids.append(int(raw))
+            except (TypeError, ValueError):
+                pass
+        movie_ids = sorted(set(movie_ids))
+        if not movie_ids:
+            flash("Select at least one movie to add.", "warning")
+        else:
+            placeholders = ",".join("?" for _ in movie_ids)
+            params = [shelf_id, library_id, *movie_ids]
+            cur = db.execute(
+                f"""UPDATE movies SET shelf_id=?, updated_at=CURRENT_TIMESTAMP
+                    WHERE library_id=? AND parent_box_set_id IS NULL
+                      AND id IN ({placeholders})""",
+                params,
+            )
+            db.commit()
+            flash(f"Added or moved {cur.rowcount} movie{'s' if cur.rowcount != 1 else ''} to {shelf['name']}.", "success")
+            return redirect(url_for("catalog.shelf_detail", library_id=library_id, shelf_id=shelf_id))
+
+    q = (request.args.get("q") or "").strip()
+    show_other_shelves = request.args.get("show_other_shelves") == "1"
+    where = ["m.library_id=?", "m.parent_box_set_id IS NULL"]
+    params = [library_id]
+    if show_other_shelves:
+        where.append("(m.shelf_id IS NULL OR m.shelf_id != ?)")
+        params.append(shelf_id)
+    else:
+        where.append("m.shelf_id IS NULL")
+    if q:
+        like = f"%{q}%"
+        where.append("(m.title LIKE ? COLLATE NOCASE OR COALESCE(m.barcode,'') LIKE ? OR CAST(COALESCE(m.year,'') AS TEXT) LIKE ?)")
+        params.extend([like, like, like])
+    movies = db.execute(
+        f"""SELECT m.*, s.name AS current_shelf_name
+            FROM movies m LEFT JOIN shelves s ON s.id=m.shelf_id
+            WHERE {' AND '.join(where)}
+            ORDER BY m.title COLLATE NOCASE, m.year, m.id""",
+        params,
+    ).fetchall()
+    return render_template(
+        "shelf_add_movies.html", library=library, role=role, shelf=shelf,
+        movies=movies, q=q, show_other_shelves=show_other_shelves,
+    )
+
+
+@bp.route("/libraries/<int:library_id>/shelves/<int:shelf_id>/remove-movies", methods=["GET", "POST"])
+@login_required
+@require_library_role("editor")
+def shelf_remove_movies(library_id, shelf_id, library, role):
+    db = get_db()
+    shelf = db.execute(
+        "SELECT * FROM shelves WHERE id=? AND library_id=?", (shelf_id, library_id)
+    ).fetchone()
+    if not shelf:
+        abort(404)
+
+    if request.method == "POST":
+        movie_ids = []
+        for raw in request.form.getlist("movie_ids"):
+            try:
+                movie_ids.append(int(raw))
+            except (TypeError, ValueError):
+                pass
+        movie_ids = sorted(set(movie_ids))
+        if not movie_ids:
+            flash("Select at least one movie to remove.", "warning")
+        else:
+            placeholders = ",".join("?" for _ in movie_ids)
+            params = [library_id, shelf_id, *movie_ids]
+            cur = db.execute(
+                f"""UPDATE movies SET shelf_id=NULL, updated_at=CURRENT_TIMESTAMP
+                    WHERE library_id=? AND shelf_id=? AND parent_box_set_id IS NULL
+                      AND id IN ({placeholders})""",
+                params,
+            )
+            db.commit()
+            flash(f"Removed {cur.rowcount} movie{'s' if cur.rowcount != 1 else ''} from {shelf['name']}. They are now Unassigned.", "success")
+            return redirect(url_for("catalog.shelf_detail", library_id=library_id, shelf_id=shelf_id))
+
+    q = (request.args.get("q") or "").strip()
+    where = ["m.library_id=?", "m.shelf_id=?", "m.parent_box_set_id IS NULL"]
+    params = [library_id, shelf_id]
+    if q:
+        like = f"%{q}%"
+        where.append("(m.title LIKE ? COLLATE NOCASE OR COALESCE(m.barcode,'') LIKE ? OR CAST(COALESCE(m.year,'') AS TEXT) LIKE ?)")
+        params.extend([like, like, like])
+    movies = db.execute(
+        f"SELECT m.* FROM movies m WHERE {' AND '.join(where)} ORDER BY m.title COLLATE NOCASE, m.year, m.id",
+        params,
+    ).fetchall()
+    return render_template(
+        "shelf_remove_movies.html", library=library, role=role, shelf=shelf, movies=movies, q=q
+    )
+
+
 @bp.post("/libraries/<int:library_id>/shelves/<int:shelf_id>/edit")
 @login_required
 @require_library_role("editor")
@@ -738,8 +869,15 @@ def shelf_edit(library_id, shelf_id, library, role):
 @login_required
 @require_library_role("editor")
 def shelf_delete(library_id, shelf_id, library, role):
-    db = get_db(); db.execute("DELETE FROM shelves WHERE id=? AND library_id=?", (shelf_id, library_id)); db.commit()
-    flash("Shelf removed. Movies on it are now Unassigned.", "success")
+    db = get_db()
+    shelf = db.execute("SELECT id,name FROM shelves WHERE id=? AND library_id=?", (shelf_id, library_id)).fetchone()
+    if not shelf:
+        abort(404)
+    db.execute("UPDATE movies SET shelf_id=NULL, updated_at=CURRENT_TIMESTAMP WHERE library_id=? AND shelf_id=?", (library_id, shelf_id))
+    db.execute("UPDATE box_sets SET shelf_id=NULL, updated_at=CURRENT_TIMESTAMP WHERE library_id=? AND shelf_id=?", (library_id, shelf_id))
+    db.execute("DELETE FROM shelves WHERE id=? AND library_id=?", (shelf_id, library_id))
+    db.commit()
+    flash(f"Shelf {shelf['name']} removed. Its titles remain in the Library and are now Unassigned.", "success")
     return redirect(url_for("catalog.shelves", library_id=library_id))
 
 
@@ -912,6 +1050,7 @@ def match_repair_batch(library_id, library, role):
     except (TypeError, ValueError):
         after_id = 0
     refresh_matched = bool(payload.get("refresh_matched", False))
+    auto_match = bool(payload.get("auto_match", True))
 
     db = get_db()
     if refresh_matched:
@@ -945,6 +1084,13 @@ def match_repair_batch(library_id, library, role):
                 query_titles, query_year = _match_queries_for_movie(movie)
                 choice = _find_high_confidence_match(query_titles, query_year, search_cache, media_type=media_type)
                 if not choice:
+                    db.execute(
+                        "UPDATE movies SET review_pending=1, updated_at=CURRENT_TIMESTAMP WHERE id=? AND library_id=?",
+                        (movie["id"], library_id),
+                    )
+                    counts["unmatched"] += 1
+                    continue
+                if not auto_match:
                     db.execute(
                         "UPDATE movies SET review_pending=1, updated_at=CURRENT_TIMESTAMP WHERE id=? AND library_id=?",
                         (movie["id"], library_id),

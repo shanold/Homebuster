@@ -10,6 +10,11 @@ data class LoginRequest(val username: String, val password: String, @SerializedN
 data class User(val id: Int, val username: String, @SerializedName("is_admin") val isAdmin: Boolean)
 data class LoginResponse(val token: String, val user: User)
 data class ServerStatus(@SerializedName("server_version") val serverVersion: String, @SerializedName("api_version") val apiVersion: String, val status: String)
+data class Library(
+    val id: Int, val name: String, val role: String,
+    @SerializedName("default_media_type") val defaultMediaType: String = "movie"
+)
+data class LibrariesResponse(val libraries: List<Library>)
 data class Movie(
     val id: Int, @SerializedName("library_id") val libraryId: Int, @SerializedName("shelf_id") val shelfId: Int?,
     @SerializedName("tmdb_id") val tmdbId: Int?, @SerializedName("media_type") val mediaType: String = "movie", val title: String, val year: Int?, val overview: String,
@@ -42,11 +47,13 @@ data class BarcodeLookup(
     val language: String? = null, val region: String? = null, @SerializedName("disc_count") val discCount: Int? = null,
     val distributor: String? = null, val category: String? = null, val attempts: List<BarcodeSearchAttempt> = emptyList()
 )
+data class BoxSetSummary(val id: Int, val title: String, @SerializedName("library_id") val libraryId: Int? = null)
 data class BarcodeResponse(
     val status: String,
     @SerializedName("media_type") val mediaType: String = "movie",
     val upc: String?,
     val movie: Movie?,
+    @SerializedName("box_set") val boxSet: BoxSetSummary? = null,
     val product: BarcodeProduct?,
     val lookup: BarcodeLookup?,
     @SerializedName("best_match") val bestMatch: TmdbResult? = null,
@@ -55,23 +62,49 @@ data class BarcodeResponse(
     val message: String? = null
 )
 data class AddMovieRequest(
+    @SerializedName("library_id") val libraryId: Int?,
     @SerializedName("tmdb_id") val tmdbId: Int?, @SerializedName("media_type") val mediaType: String = "movie", val title: String, val year: Int?, val overview: String?,
     @SerializedName("poster_path") val posterPath: String?, val format: String, val upc: String?,
     val version: String? = null, val language: String? = null, val region: String? = null,
     @SerializedName("disc_count") val discCount: Int? = null
 )
 
+data class CollectionPart(
+    val id: Int?, val title: String, @SerializedName("release_date") val releaseDate: String? = null,
+    @SerializedName("poster_path") val posterPath: String? = null, val position: Int = 0
+)
+data class CollectionDetail(
+    val id: Int, val title: String, val overview: String = "",
+    @SerializedName("poster_path") val posterPath: String? = null, val parts: List<CollectionPart> = emptyList()
+)
+data class CollectionDetailResponse(val collection: CollectionDetail)
+data class AddBoxSetMember(
+    @SerializedName("tmdb_id") val tmdbId: Int?, val title: String, val year: Int?,
+    @SerializedName("poster_path") val posterPath: String?, val position: Int
+)
+data class AddBoxSetRequest(
+    @SerializedName("library_id") val libraryId: Int, val barcode: String?, val title: String,
+    @SerializedName("tmdb_collection_id") val tmdbCollectionId: Int,
+    @SerializedName("poster_path") val posterPath: String?, val format: String, val version: String? = null,
+    val language: String? = null, val region: String? = null, @SerializedName("disc_count") val discCount: Int? = null,
+    val status: String = "owned", val members: List<AddBoxSetMember>
+)
+data class BoxSetResponse(@SerializedName("box_set") val boxSet: BoxSetSummary)
+
 interface HomebusterApi {
     @GET("api/v1/status") suspend fun status(): ServerStatus
     @POST("api/v1/auth/login") suspend fun login(@Body body: LoginRequest): LoginResponse
-    @GET("api/v1/movies") suspend fun movies(@Header("Authorization") auth: String, @Query("q") query: String? = null): MoviesResponse
+    @GET("api/v1/libraries") suspend fun libraries(@Header("Authorization") auth: String): LibrariesResponse
+    @GET("api/v1/movies") suspend fun movies(@Header("Authorization") auth: String, @Query("q") query: String? = null, @Query("library_id") libraryId: Int? = null): MoviesResponse
     @GET("api/v1/movies/{id}") suspend fun movie(@Header("Authorization") auth: String, @Path("id") id: Int): Map<String, Movie>
     @GET("api/v1/collections") suspend fun collections(@Header("Authorization") auth: String): CollectionsResponse
     @GET("api/v1/collections/{id}/movies") suspend fun collectionMovies(@Header("Authorization") auth: String, @Path("id") id: Int): MoviesResponse
     @GET("api/v1/loans") suspend fun loans(@Header("Authorization") auth: String): LoansResponse
     @GET("api/v1/tmdb/search") suspend fun tmdb(@Header("Authorization") auth: String, @Query("q") query: String, @Query("media_type") mediaType: String = "movie"): TmdbResponse
-    @GET("api/v1/barcodes/{upc}") suspend fun barcode(@Header("Authorization") auth: String, @Path("upc") upc: String, @Query("media_type") mediaType: String = "movie"): BarcodeResponse
+    @GET("api/v1/barcodes/{upc}") suspend fun barcode(@Header("Authorization") auth: String, @Path("upc") upc: String, @Query("media_type") mediaType: String = "movie", @Query("library_id") libraryId: Int? = null): BarcodeResponse
+    @GET("api/v1/tmdb/collections/{id}") suspend fun collectionDetails(@Header("Authorization") auth: String, @Path("id") id: Int): CollectionDetailResponse
     @POST("api/v1/movies") suspend fun addMovie(@Header("Authorization") auth: String, @Body body: AddMovieRequest): Map<String, Movie>
+    @POST("api/v1/box-sets") suspend fun addBoxSet(@Header("Authorization") auth: String, @Body body: AddBoxSetRequest): BoxSetResponse
 }
 
 object ApiFactory {

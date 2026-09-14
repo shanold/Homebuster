@@ -10,6 +10,12 @@ from .permissions import get_library_access, list_accessible_libraries, require_
 
 bp = Blueprint("libraries", __name__, url_prefix="/libraries")
 
+LIBRARY_DEFAULT_MEDIA_TYPES = {"movie", "tv", "collection"}
+
+def normalize_library_default_media_type(value):
+    value = str(value or "movie").strip().lower()
+    return value if value in LIBRARY_DEFAULT_MEDIA_TYPES else "movie"
+
 
 @bp.get("")
 @login_required
@@ -23,11 +29,15 @@ def index():
 def create():
     if request.method == "POST":
         name = (request.form.get("name") or "").strip()
+        default_media_type = normalize_library_default_media_type(request.form.get("default_media_type"))
         if not name:
             flash("Library name is required.", "error")
         else:
             db = get_db()
-            cur = db.execute("INSERT INTO libraries (name, owner_id) VALUES (?, ?)", (name, current_user.id))
+            cur = db.execute(
+                "INSERT INTO libraries (name, owner_id, default_media_type) VALUES (?, ?, ?)",
+                (name, current_user.id, default_media_type),
+            )
             db.commit()
             flash("Library created.", "success")
             return redirect(url_for("catalog.library_home", library_id=cur.lastrowid))
@@ -57,6 +67,18 @@ def settings(library_id, library, role):
         (library_id, library_id, library_id, library_id, library_id, library_id),
     ).fetchone()
     return render_template("library_settings.html", library=library, role=role, members=members, counts=counts)
+
+
+@bp.post("/<int:library_id>/settings/default-media-type")
+@login_required
+@require_library_role("owner")
+def set_default_media_type(library_id, library, role):
+    default_media_type = normalize_library_default_media_type(request.form.get("default_media_type"))
+    db = get_db()
+    db.execute("UPDATE libraries SET default_media_type=? WHERE id=?", (default_media_type, library_id))
+    db.commit()
+    flash("Library default content type updated.", "success")
+    return redirect(url_for("libraries.settings", library_id=library_id))
 
 
 @bp.post("/<int:library_id>/settings/box-set-members")

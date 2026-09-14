@@ -64,6 +64,7 @@ def _create_identity_tables(db: sqlite3.Connection) -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             owner_id INTEGER NOT NULL,
+            default_media_type TEXT NOT NULL DEFAULT 'movie',
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(owner_id) REFERENCES users(id) ON DELETE RESTRICT
         );
@@ -272,6 +273,8 @@ def _ensure_catalog_columns(db: sqlite3.Connection) -> None:
     library_cols = table_columns(db, "libraries")
     if library_cols and "show_box_set_members" not in library_cols:
         db.execute("ALTER TABLE libraries ADD COLUMN show_box_set_members INTEGER NOT NULL DEFAULT 0")
+    if library_cols and "default_media_type" not in library_cols:
+        db.execute("ALTER TABLE libraries ADD COLUMN default_media_type TEXT NOT NULL DEFAULT 'movie'")
 
 
 

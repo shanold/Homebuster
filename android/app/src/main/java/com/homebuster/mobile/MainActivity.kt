@@ -70,11 +70,28 @@ fun HomebusterApp(store: SessionStore) {
     var screen by remember { mutableStateOf(if (token == null || server.isBlank()) Screen.LOGIN else Screen.LIBRARY) }
     var selected by remember { mutableStateOf<MovieGroup?>(null) }
     var scanned by remember { mutableStateOf<BarcodeResponse?>(null) }
+    var libraries by remember { mutableStateOf<List<Library>>(emptyList()) }
+    var activeLibraryId by remember { mutableStateOf<Int?>(null) }
     val api = remember(server, token) {
         if (token != null && (server.startsWith("http://") || server.startsWith("https://"))) {
             runCatching { ApiFactory.create(server) }.getOrNull()
         } else null
     }
+
+    LaunchedEffect(api, token) {
+        if (api != null && token != null) {
+            runCatching { api.libraries("Bearer $token").libraries }.onSuccess { loaded ->
+                libraries = loaded
+                if (activeLibraryId == null || loaded.none { it.id == activeLibraryId }) {
+                    activeLibraryId = loaded.firstOrNull()?.id
+                }
+            }
+        } else {
+            libraries = emptyList()
+            activeLibraryId = null
+        }
+    }
+    val activeLibrary = libraries.firstOrNull { it.id == activeLibraryId } ?: libraries.firstOrNull()
 
     val navigateBack: () -> Unit = {
         screen = when (screen) {
@@ -96,12 +113,15 @@ fun HomebusterApp(store: SessionStore) {
                 serverVersion = detectedVersion
                 screen = Screen.LIBRARY
             }
-            Screen.LIBRARY -> LibraryScreen(api!!, token!!, serverVersion,
+            Screen.LIBRARY -> LibraryScreen(
+                api!!, token!!, serverVersion, libraries, activeLibrary,
+                onLibrarySelected = { activeLibraryId = it.id },
                 onMovie = { selected = it; screen = Screen.DETAILS },
                 onCollections = { screen = Screen.COLLECTIONS },
                 onLoans = { screen = Screen.LOANS },
                 onScan = { screen = Screen.SCANNER },
-                onLogout = { store.clear(); token = null; serverVersion = null; screen = Screen.LOGIN })
+                onLogout = { store.clear(); token = null; serverVersion = null; libraries = emptyList(); activeLibraryId = null; screen = Screen.LOGIN }
+            )
             Screen.DETAILS -> MovieDetailScreen(selected!!, navigateBack)
             Screen.COLLECTIONS -> CollectionsScreen(api!!, token!!, navigateBack)
             Screen.LOANS -> LoansScreen(api!!, token!!, navigateBack)
@@ -109,7 +129,13 @@ fun HomebusterApp(store: SessionStore) {
                 scanned = BarcodeResponse(status = "loading", upc = code, movie = null, product = null, lookup = null)
                 screen = Screen.BARCODE_RESULT
             }, onBack = navigateBack)
-            Screen.BARCODE_RESULT -> BarcodeResultScreen(api!!, token!!, scanned?.upc.orEmpty(), { scanned = it }, navigateBack)
+            Screen.BARCODE_RESULT -> BarcodeResultScreen(
+                api!!, token!!, scanned?.upc.orEmpty(),
+                activeLibrary = activeLibrary,
+                initialMediaType = activeLibrary?.defaultMediaType ?: "movie",
+                onLoaded = { scanned = it },
+                onBack = navigateBack
+            )
         }
     }
 }
@@ -202,16 +228,42 @@ private fun friendly(e: Exception): String = when (e) {
 }
 
 @Composable
-private fun LibraryScreen(api: HomebusterApi, token: String, serverVersion: String?, onMovie: (MovieGroup) -> Unit, onCollections: () -> Unit, onLoans: () -> Unit, onScan: () -> Unit, onLogout: () -> Unit) {
+private fun LibraryScreen(
+    api: HomebusterApi, token: String, serverVersion: String?,
+    libraries: List<Library>, activeLibrary: Library?, onLibrarySelected: (Library) -> Unit,
+    onMovie: (MovieGroup) -> Unit, onCollections: () -> Unit, onLoans: () -> Unit, onScan: () -> Unit, onLogout: () -> Unit
+) {
     var movies by remember { mutableStateOf<List<Movie>>(emptyList()) }
     var query by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(query) { try { movies = api.movies("Bearer $token", query.ifBlank { null }).movies; error = null } catch (e: Exception) { error = friendly(e) } }
+    var libraryMenuExpanded by remember { mutableStateOf(false) }
+    LaunchedEffect(query, activeLibrary?.id) {
+        try {
+            movies = api.movies("Bearer $token", query.ifBlank { null }, activeLibrary?.id).movies
+            error = null
+        } catch (e: Exception) { error = friendly(e) }
+    }
     val groups = remember(movies) { groupMovies(movies) }
     Column(Modifier.fillMaxSize()) {
         HomebusterTopBar("App v${BuildConfig.VERSION_NAME} • Server v${serverVersion ?: "unknown"}", "Log out", onLogout)
         Column(Modifier.fillMaxWidth().padding(16.dp)) {
-            OutlinedTextField(query, { query = it }, label = { Text("Search my movies") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            if (libraries.isNotEmpty()) {
+                Box {
+                    OutlinedButton(onClick = { libraryMenuExpanded = true }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Library: ${activeLibrary?.name ?: libraries.first().name}")
+                    }
+                    DropdownMenu(expanded = libraryMenuExpanded, onDismissRequest = { libraryMenuExpanded = false }) {
+                        libraries.forEach { library ->
+                            DropdownMenuItem(
+                                text = { Text("${library.name} • ${when (library.defaultMediaType) { "tv" -> "TV"; "collection" -> "Box Sets"; else -> "Movies" }}") },
+                                onClick = { libraryMenuExpanded = false; onLibrarySelected(library) }
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+            }
+            OutlinedTextField(query, { query = it }, label = { Text("Search this library") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             Spacer(Modifier.height(12.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = onCollections, modifier = Modifier.weight(1f)) { Text("Collections") }
@@ -310,37 +362,62 @@ private fun LoansScreen(api: HomebusterApi, token: String, onBack: () -> Unit) {
 }
 
 @Composable
-private fun BarcodeResultScreen(api: HomebusterApi, token: String, upc: String, onLoaded: (BarcodeResponse) -> Unit, onBack: () -> Unit) {
-    var result by remember(upc) { mutableStateOf<BarcodeResponse?>(null) }
+private fun BarcodeResultScreen(
+    api: HomebusterApi,
+    token: String,
+    upc: String,
+    activeLibrary: Library?,
+    initialMediaType: String,
+    onLoaded: (BarcodeResponse) -> Unit,
+    onBack: () -> Unit
+) {
+    var result by remember(upc, initialMediaType) { mutableStateOf<BarcodeResponse?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var addError by remember { mutableStateOf<String?>(null) }
     var addingTmdbId by remember { mutableStateOf<Int?>(null) }
     var addedMovie by remember { mutableStateOf<Movie?>(null) }
-    var mediaType by remember { mutableStateOf("movie") }
+    var addedBoxSetTitle by remember { mutableStateOf<String?>(null) }
+    var mediaType by remember(upc, initialMediaType) {
+        mutableStateOf(initialMediaType.takeIf { it in setOf("movie", "tv", "collection") } ?: "movie")
+    }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(upc, mediaType) {
+    LaunchedEffect(upc, mediaType, activeLibrary?.id) {
         result = null
         error = null
-        try { result = api.barcode("Bearer $token", upc, mediaType); onLoaded(result!!) }
-        catch (e: HttpException) { error = if (e.code() == 404) "Barcode $upc is not in your library and the server could not identify it." else friendly(e) }
-        catch (e: Exception) { error = friendly(e) }
+        try {
+            result = api.barcode("Bearer $token", upc, mediaType, activeLibrary?.id)
+            onLoaded(result!!)
+        } catch (e: HttpException) {
+            error = if (e.code() == 404) "Barcode $upc is not in this library and the server could not identify it." else friendly(e)
+        } catch (e: Exception) {
+            error = friendly(e)
+        }
     }
 
     LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { HomebusterScreenHeader("Barcode lookup", onBack) }
-        item { Text("UPC $upc", color = HbMuted, style = MaterialTheme.typography.bodySmall) }
+        item {
+            Text("UPC $upc", color = HbMuted, style = MaterialTheme.typography.bodySmall)
+            activeLibrary?.let { Text("Library: ${it.name}", color = HbMuted, style = MaterialTheme.typography.bodySmall) }
+        }
         item {
             HomebusterPanel {
                 Text("TMDb search type", fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (mediaType == "movie") Button(onClick = { mediaType = "movie" }, modifier = Modifier.weight(1f)) { Text("Movie") }
                     else OutlinedButton(onClick = { mediaType = "movie" }, modifier = Modifier.weight(1f)) { Text("Movie") }
-                    if (mediaType == "tv") Button(onClick = { mediaType = "tv" }, modifier = Modifier.weight(1f)) { Text("TV / Box Set") }
-                    else OutlinedButton(onClick = { mediaType = "tv" }, modifier = Modifier.weight(1f)) { Text("TV / Box Set") }
+                    if (mediaType == "tv") Button(onClick = { mediaType = "tv" }, modifier = Modifier.weight(1f)) { Text("TV") }
+                    else OutlinedButton(onClick = { mediaType = "tv" }, modifier = Modifier.weight(1f)) { Text("TV") }
+                    if (mediaType == "collection") Button(onClick = { mediaType = "collection" }, modifier = Modifier.weight(1f)) { Text("Box Set") }
+                    else OutlinedButton(onClick = { mediaType = "collection" }, modifier = Modifier.weight(1f)) { Text("Box Set") }
                 }
-                Text("Movie is the default. Switching to TV sends the lookup only to TMDb TV.", color = HbMuted, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    "This scan starts with the library default. Changing it applies only to this lookup.",
+                    color = HbMuted,
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
         }
 
@@ -356,6 +433,17 @@ private fun BarcodeResultScreen(api: HomebusterApi, token: String, upc: String, 
                 }
             }
         }
+        addedBoxSetTitle?.let { title ->
+            item {
+                HomebusterPanel {
+                    Text("Added box set to Homebuster", color = HbGood, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(4.dp))
+                    Text(title, style = MaterialTheme.typography.titleLarge)
+                    Spacer(Modifier.height(10.dp))
+                    Button(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("Back to library") }
+                }
+            }
+        }
         addError?.let { item { HomebusterErrorCard(it) } }
 
         when (val r = result) {
@@ -364,28 +452,29 @@ private fun BarcodeResultScreen(api: HomebusterApi, token: String, upc: String, 
                 item {
                     HomebusterPanel {
                         Text("Local library", color = HbAccent, fontWeight = FontWeight.Bold)
-                        Text("Not currently in your library", color = HbMuted)
+                        Text("Not currently in this library", color = HbMuted)
                         Spacer(Modifier.height(12.dp))
                         Text("UPCitemdb", color = HbAccent, fontWeight = FontWeight.Bold)
-                        Text(
-                            r.message ?: "UPCitemdb did not find a product for this barcode",
-                            color = HbWarning,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Text(r.message ?: "UPCitemdb did not find a product for this barcode", color = HbWarning, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.height(8.dp))
-                        Text(
-                            "Homebuster can't search TMDb automatically because UPCitemdb didn't provide a movie title.",
-                            color = HbMuted
-                        )
+                        Text("Homebuster can't search TMDb automatically because UPCitemdb didn't provide a title.", color = HbMuted)
                     }
                 }
             } else if (r.status == "owned" && r.movie != null) {
                 item {
                     HomebusterPanel {
-                        Text("You already own this.", color = HbGood, fontWeight = FontWeight.Bold)
+                        Text("You already own this in the selected library.", color = HbGood, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.height(4.dp))
                         Text(r.movie.title, style = MaterialTheme.typography.titleLarge)
                         Text(listOfNotNull(r.movie.format, r.movie.version).joinToString(" • "), color = HbMuted)
+                    }
+                }
+            } else if (r.status == "owned" && r.boxSet != null) {
+                item {
+                    HomebusterPanel {
+                        Text("You already own this box set in the selected library.", color = HbGood, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(4.dp))
+                        Text(r.boxSet.title, style = MaterialTheme.typography.titleLarge)
                     }
                 }
             } else {
@@ -393,11 +482,11 @@ private fun BarcodeResultScreen(api: HomebusterApi, token: String, upc: String, 
                     HomebusterPanel {
                         Text("Scanned product", color = HbMuted, style = MaterialTheme.typography.bodySmall)
                         Text(r.product?.productTitle ?: "Product found", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-
                         r.lookup?.let { lookup ->
                             Spacer(Modifier.height(12.dp))
                             Text("Homebuster detected", color = HbAccent, fontWeight = FontWeight.Bold)
-                            Text("${if (mediaType == "tv") "TV series" else "Movie"}: ${lookup.title}")
+                            val kind = when (mediaType) { "tv" -> "TV series"; "collection" -> "Movie box set"; else -> "Movie" }
+                            Text("$kind: ${lookup.title}")
                             lookup.year?.let { Text("Year: $it") }
                             lookup.format?.takeIf { it.isNotBlank() }?.let { Text("Format: $it") }
                             lookup.language?.takeIf { it.isNotBlank() }?.let { Text("Language: $it") }
@@ -413,11 +502,8 @@ private fun BarcodeResultScreen(api: HomebusterApi, token: String, upc: String, 
                             }
                             Spacer(Modifier.height(10.dp))
                             Text("TMDb search: ${lookup.title}${lookup.year?.let { " ($it)" } ?: ""}", color = HbAccent)
-                            if (lookup.attempts.size > 1) {
-                                Text("Homebuster tried ${lookup.attempts.size} search variations.", color = HbMuted, style = MaterialTheme.typography.bodySmall)
-                            }
+                            if (lookup.attempts.size > 1) Text("Homebuster tried ${lookup.attempts.size} search variations.", color = HbMuted, style = MaterialTheme.typography.bodySmall)
                         }
-
                         Spacer(Modifier.height(8.dp))
                         val count = r.tmdbResults?.size ?: 0
                         Text(if (count == 0) "No TMDb matches found" else "$count TMDb matches", color = if (count == 0) HbWarning else HbGood)
@@ -437,48 +523,75 @@ private fun BarcodeResultScreen(api: HomebusterApi, token: String, upc: String, 
                                 )
                             }
                             Column(Modifier.weight(1f)) {
-                                if (isBest) {
-                                    HomebusterMetaChip("Best match", HbGood)
-                                    Spacer(Modifier.height(6.dp))
-                                }
-                                HomebusterMetaChip(if (match.mediaType == "tv") "TV" else "Movie", HbAccent)
+                                if (isBest) { HomebusterMetaChip("Best match", HbGood); Spacer(Modifier.height(6.dp)) }
+                                HomebusterMetaChip(when (match.mediaType) { "tv" -> "TV"; "collection" -> "Box Set"; else -> "Movie" }, HbAccent)
                                 Spacer(Modifier.height(4.dp))
                                 Text(match.title, fontWeight = FontWeight.Bold)
                                 match.year?.let { Text(it.toString(), color = HbMuted) }
-                                if (match.overview.isNotBlank()) {
-                                    Text(match.overview, color = HbMuted, style = MaterialTheme.typography.bodySmall, maxLines = 4)
-                                }
+                                if (match.overview.isNotBlank()) Text(match.overview, color = HbMuted, style = MaterialTheme.typography.bodySmall, maxLines = 4)
                             }
                         }
                         Spacer(Modifier.height(12.dp))
                         Button(
-                            enabled = addedMovie == null && addingTmdbId == null,
+                            enabled = addedMovie == null && addedBoxSetTitle == null && addingTmdbId == null && activeLibrary != null,
                             onClick = {
                                 addError = null
                                 addingTmdbId = match.tmdbId
                                 scope.launch {
                                     try {
+                                        val libraryId = activeLibrary?.id ?: error("No active library selected")
                                         val lookup = r.lookup
-                                        val selectedMetadata = match.copyMetadata
-                                        val response = api.addMovie(
-                                            "Bearer $token",
-                                            AddMovieRequest(
-                                                tmdbId = match.tmdbId,
-                                                mediaType = match.mediaType.ifBlank { mediaType },
-                                                title = match.title,
-                                                year = match.year,
-                                                overview = match.overview,
-                                                posterPath = match.posterPath,
-                                                format = selectedMetadata?.format?.takeIf { it.isNotBlank() }
-                                                    ?: lookup?.format?.takeIf { it.isNotBlank() } ?: "Unknown",
-                                                upc = r.upc ?: upc,
-                                                version = selectedMetadata?.edition ?: lookup?.edition,
-                                                language = selectedMetadata?.language ?: lookup?.language,
-                                                region = selectedMetadata?.region ?: lookup?.region,
-                                                discCount = selectedMetadata?.discCount ?: lookup?.discCount
+                                        if (mediaType == "collection" || match.mediaType == "collection") {
+                                            val details = api.collectionDetails("Bearer $token", match.tmdbId).collection
+                                            val members = details.parts.map { part ->
+                                                AddBoxSetMember(
+                                                    tmdbId = part.id,
+                                                    title = part.title,
+                                                    year = part.releaseDate?.take(4)?.toIntOrNull(),
+                                                    posterPath = part.posterPath,
+                                                    position = part.position
+                                                )
+                                            }
+                                            val response = api.addBoxSet(
+                                                "Bearer $token",
+                                                AddBoxSetRequest(
+                                                    libraryId = libraryId,
+                                                    barcode = r.upc ?: upc,
+                                                    title = details.title.ifBlank { match.title },
+                                                    tmdbCollectionId = details.id,
+                                                    posterPath = details.posterPath ?: match.posterPath,
+                                                    format = lookup?.format?.takeIf { it.isNotBlank() } ?: "Unknown",
+                                                    version = lookup?.edition,
+                                                    language = lookup?.language,
+                                                    region = lookup?.region,
+                                                    discCount = lookup?.discCount,
+                                                    members = members
+                                                )
                                             )
-                                        )
-                                        addedMovie = response["movie"]
+                                            addedBoxSetTitle = response.boxSet.title
+                                        } else {
+                                            val selectedMetadata = match.copyMetadata
+                                            val response = api.addMovie(
+                                                "Bearer $token",
+                                                AddMovieRequest(
+                                                    libraryId = libraryId,
+                                                    tmdbId = match.tmdbId,
+                                                    mediaType = match.mediaType.ifBlank { mediaType },
+                                                    title = match.title,
+                                                    year = match.year,
+                                                    overview = match.overview,
+                                                    posterPath = match.posterPath,
+                                                    format = selectedMetadata?.format?.takeIf { it.isNotBlank() }
+                                                        ?: lookup?.format?.takeIf { it.isNotBlank() } ?: "Unknown",
+                                                    upc = r.upc ?: upc,
+                                                    version = selectedMetadata?.edition ?: lookup?.edition,
+                                                    language = selectedMetadata?.language ?: lookup?.language,
+                                                    region = selectedMetadata?.region ?: lookup?.region,
+                                                    discCount = selectedMetadata?.discCount ?: lookup?.discCount
+                                                )
+                                            )
+                                            addedMovie = response["movie"]
+                                        }
                                     } catch (e: Exception) {
                                         addError = friendly(e)
                                     } finally {
@@ -487,13 +600,10 @@ private fun BarcodeResultScreen(api: HomebusterApi, token: String, upc: String, 
                                 }
                             },
                             modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(if (addingTmdbId == match.tmdbId) "Adding…" else "Add this copy")
-                        }
+                        ) { Text(if (addingTmdbId == match.tmdbId) "Adding…" else "Add this copy") }
                     }
                 }
             }
         }
     }
 }
-

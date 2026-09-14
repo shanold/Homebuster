@@ -13,5 +13,5 @@ assert 'Blu-ray + DVD' in tpl or ('blu-ray' in tpl.lower() and 'dvd' in tpl.lowe
 assert 'replaceChildren' in tpl or 'innerHTML' in tpl, 'format band must replace plain text with marks'
 assert '.case-preview-logo' in css or '.case-format-logos' in css, 'format-logo container styling missing'
 assert '.media-logo-badge' in css, 'format-logo badge styling missing'
-assert any(v in config for v in ('APP_VERSION = "0.3.36"','APP_VERSION = "0.3.37"', 'APP_VERSION = "0.3.38"')), 'server version not bumped'
+assert any(v in config for v in ('APP_VERSION = "0.3.36"','APP_VERSION = "0.3.37"', 'APP_VERSION = "0.3.38"', 'APP_VERSION = "0.3.39"')), 'server version not bumped'
 print('v0.3.36 case format logo source checks passed')

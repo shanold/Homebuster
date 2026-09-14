@@ -25,6 +25,6 @@ need('TV' in main and 'Movie' in main and 'mediaType' in main, 'Android UI missi
 
 config = read('movie_catalogue/config.py')
 gradle = read('android/app/build.gradle.kts')
-need(any(v in config for v in ('0.3.24','0.3.25','0.3.26','0.3.27','0.3.28','0.3.29','0.3.30','0.3.31','0.3.32','0.3.33','0.3.34','0.3.35','0.3.36','0.3.37','0.3.38')), 'server TV-support version missing')
+need(any(v in config for v in ('0.3.24','0.3.25','0.3.26','0.3.27','0.3.28','0.3.29','0.3.30','0.3.31','0.3.32','0.3.33','0.3.34','0.3.35','0.3.36','0.3.37','0.3.38','0.3.39')), 'server TV-support version missing')
 need('versionName = "0.3.24"' in gradle or 'versionName = "0.3.25"' in gradle, 'Android TV-support version missing')
 print('v0.3.24 TV support source contract checks passed')

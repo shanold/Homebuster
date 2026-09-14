@@ -13,9 +13,9 @@
   <progress id="repair-progress" value="0" max="{{ unresolved_total or 1 }}" style="width:100%"></progress>
   <label>TMDb search type
     <select id="search-type" name="search_type">
-      <option value="movie" selected>Movie</option>
-      <option value="tv">TV / Box Set</option>
-      <option value="collection">Movie Collection / Box Set</option>
+      <option value="movie" {% if default_search_type == 'movie' %}selected{% endif %}>Movie</option>
+      <option value="tv" {% if default_search_type == 'tv' %}selected{% endif %}>TV / Box Set</option>
+      <option value="collection" {% if default_search_type == 'collection' %}selected{% endif %}>Movie Collection / Box Set</option>
     </select>
   </label>
   <p class="muted">Controls which single TMDb endpoint Homebuster searches for currently-unmatched titles. It never searches Movie, TV, and Collection together.</p>

@@ -236,10 +236,10 @@ def libraries():
     db = get_db()
     rows = db.execute(
         """
-        SELECT l.id, l.name, 'owner' AS role
+        SELECT l.id, l.name, l.default_media_type, 'owner' AS role
         FROM libraries l WHERE l.owner_id=?
         UNION ALL
-        SELECT l.id, l.name, lm.role
+        SELECT l.id, l.name, l.default_media_type, lm.role
         FROM libraries l
         JOIN library_members lm ON lm.library_id=l.id
         WHERE lm.user_id=?
@@ -541,6 +541,11 @@ def barcode_lookup(upc):
         return _json_error("Unsupported barcode", 400)
     db = get_db()
     ids = _accessible_library_ids(db, g.api_user["id"])
+    requested_library_id = request.args.get("library_id", type=int)
+    if requested_library_id is not None:
+        if requested_library_id not in ids:
+            return _json_error("Library not found", 404)
+        ids = [requested_library_id]
     if ids:
         placeholders = ",".join("?" for _ in ids)
         if media_type == "collection":
@@ -576,7 +581,15 @@ def barcode_lookup(upc):
                 results = tmdb_collection_search(query_title)
                 attempts.append({"title":query_title,"results":len(results)})
                 for item in results:
-                    merged[item.get("id") or item.get("title")] = item
+                    normalized = {
+                        "tmdb_id": item.get("id"),
+                        "media_type": "collection",
+                        "title": item.get("title") or "",
+                        "year": None,
+                        "overview": item.get("overview") or "",
+                        "poster_path": item.get("poster_path"),
+                    }
+                    merged[normalized.get("tmdb_id") or normalized.get("title")] = normalized
                 if results:
                     break
         except Exception as exc:

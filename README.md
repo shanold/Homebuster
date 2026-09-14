@@ -1,4 +1,9 @@
 
+## v0.3.39 - Library default content types
+
+Libraries can now choose a default content type: Movies, TV Shows, or Movie Collections / Box Sets. The setting controls the initial choice for new Add, Identify, Match / Repair, Mass Review, and Android barcode-scanner operations only. It does not restrict what a library can contain and changing it never modifies existing inventory. One-time type overrides remain local to the current operation.
+
+
 ## v0.3.38
 - Replaces the hand-drawn shelf preview format marks with canonical Blu-ray Disc, DVD-Video, and Ultra HD Blu-ray artwork at their natural aspect ratios.
 - Combo packs render multiple format marks side-by-side without stretching.

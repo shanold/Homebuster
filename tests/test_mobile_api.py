@@ -126,3 +126,20 @@ def test_mobile_add_movie_persists_detected_physical_metadata(client, app):
     assert movie["language"] == "English"
     assert movie["region"] == "Region 1"
     assert movie["disc_count"] == 2
+
+
+def test_mobile_libraries_expose_default_media_type(client, app):
+    from conftest import create_user
+
+    _, library_id = create_user(app, "alice")
+    headers = _login(client)
+    with app.app_context():
+        db = get_db()
+        db.execute("UPDATE libraries SET default_media_type='tv' WHERE id=?", (library_id,))
+        db.commit()
+
+    response = client.get("/api/v1/libraries", headers=headers)
+    assert response.status_code == 200
+    library = next(item for item in response.get_json()["libraries"] if item["id"] == library_id)
+    assert library["default_media_type"] == "tv"
+    assert library["role"] == "owner"

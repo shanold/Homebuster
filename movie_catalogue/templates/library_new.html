@@ -2,5 +2,7 @@
 <section class="panel narrow"><h1>Create Movie Library</h1><form method="post" class="stack">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 <label>Library name<input name="name" placeholder="My Movies" required autofocus></label>
+<label>Default content type<select name="default_media_type"><option value="movie" selected>Movies</option><option value="tv">TV Shows</option><option value="collection">Movie Collections / Box Sets</option></select></label>
+<p class="muted">Sets the default for adding, identifying, scanning, and matching. This does not restrict what the library can contain.</p>
 <button class="primary">Create Library</button></form></section>
 {% endblock %}

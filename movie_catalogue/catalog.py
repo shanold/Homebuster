@@ -83,6 +83,11 @@ def _identify_type(value):
     return value if value in {"movie", "tv", "collection"} else "movie"
 
 
+def _library_default_type(library):
+    value = library["default_media_type"] if "default_media_type" in library.keys() else "movie"
+    return _identify_type(value)
+
+
 def _match_queries_for_movie(movie, media_type=None):
     """Build multiple safe TMDb search candidates for an existing movie.
 
@@ -402,7 +407,7 @@ def movie_new(library_id, library, role):
     # and old clients that submit the movie form are not broken.
     if request.method == "GET":
         query = (request.args.get("q") or "").strip()
-        requested_type = (request.args.get("media_type") or "movie").strip().lower()
+        requested_type = (request.args.get("media_type") or _library_default_type(library)).strip().lower()
         if requested_type == "collection":
             return redirect(url_for("box_sets.new_box_set", library_id=library_id, q=query))
         media_type = _media_type(requested_type)
@@ -474,7 +479,10 @@ def movie_new(library_id, library, role):
 @require_library_role("editor")
 def movie_new_manual(library_id, library, role):
     db = get_db()
-    media_type = _media_type(request.args.get("media_type"))
+    requested_type = request.args.get("media_type") or _library_default_type(library)
+    if _identify_type(requested_type) == "collection":
+        return redirect(url_for("box_sets.new_box_set", library_id=library_id))
+    media_type = _media_type(requested_type)
     prefill = {"media_type": media_type}
     tmdb_id = request.args.get("tmdb_id", type=int)
 
@@ -1049,6 +1057,7 @@ def match_repair_page(library_id, library, role):
     return render_template(
         "match_repair.html", library=library, role=role,
         total=unresolved_total, unresolved_total=unresolved_total, library_total=library_total,
+        default_search_type=_library_default_type(library),
     )
 
 
@@ -1065,7 +1074,7 @@ def match_repair_batch(library_id, library, role):
         after_id = 0
     refresh_matched = bool(payload.get("refresh_matched", False))
     auto_match = bool(payload.get("auto_match", True))
-    bulk_search_type = _identify_type(payload.get("search_type") or "movie")
+    bulk_search_type = _identify_type(payload.get("search_type") or _library_default_type(library))
 
     db = get_db()
     if refresh_matched:
@@ -1244,11 +1253,12 @@ def match_repair_review(library_id, library, role):
         return render_template(
             "match_repair_review.html",
             library=library, role=role, movie=None, results=[], poster_size=current_app.config.get("TMDB_POSTER_SIZE", "w342"),
-            remaining_review=remaining_review, after_id=after_id, search_title="", media_type="movie",
+            remaining_review=remaining_review, after_id=after_id, search_title="", media_type=_library_default_type(library),
         )
 
     search_title = (request.args.get("search_title") or "").strip()
-    identify_type = _identify_type(request.args.get("media_type") or (movie["media_type"] if "media_type" in movie.keys() else "movie"))
+    explicit_type = (request.args.get("media_type") or "").strip()
+    identify_type = _identify_type(explicit_type) if explicit_type else _library_default_type(library)
     if search_title:
         if identify_type == "collection":
             query_titles = movie_box_set_title_candidates(search_title) or [search_title]
@@ -1457,7 +1467,8 @@ def identify_movie(library_id, movie_id, library, role):
         flash(message, "success")
         return redirect(url_for("catalog.movie_detail", library_id=library_id, movie_id=movie_id))
 
-    identify_type = _identify_type(request.args.get("media_type") or (movie["media_type"] if "media_type" in movie.keys() else "movie"))
+    explicit_type = (request.args.get("media_type") or "").strip()
+    identify_type = _identify_type(explicit_type) if explicit_type else _library_default_type(library)
     if movie["parent_box_set_id"] and identify_type == "collection":
         identify_type = "movie"
     search_title = (request.args.get("search_title") or "").strip()

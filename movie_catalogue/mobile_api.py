@@ -13,6 +13,7 @@ from .barcode_parser import (
     best_match_score,
     generate_movie_title_candidates,
     search_ready_movie_title_candidates,
+    search_ready_title_candidates,
     infer_copy_metadata_from_legacy_title,
     rank_tmdb_results,
 )
@@ -457,7 +458,7 @@ def _barcode_tmdb_matches(product: dict, media_type: str = "movie") -> tuple[lis
     year = product.get("search_year")
 
     queries: list[tuple[str, int | None]] = []
-    candidates = search_ready_movie_title_candidates(raw_title)
+    candidates = search_ready_title_candidates(raw_title, media_type=media_type)
     for value in (product.get("search_title"), *candidates, product.get("fallback_title")):
         title = str(value or "").strip()
         if not title:
@@ -491,7 +492,7 @@ def _barcode_tmdb_matches(product: dict, media_type: str = "movie") -> tuple[lis
         key=lambda item: (-int(item.get("match_score") or 0), str(item.get("title") or "").lower()),
     )[:20]
     for item in results:
-        item["copy_metadata"] = infer_copy_metadata_from_legacy_title(raw_title, item.get("title") or "")
+        item["copy_metadata"] = infer_copy_metadata_from_legacy_title(raw_title, item.get("title") or "", media_type=media_type)
         item["media_type"] = media_type
     return results, attempts
 

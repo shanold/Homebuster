@@ -25,6 +25,6 @@ need('TV' in main and 'Movie' in main and 'mediaType' in main, 'Android UI missi
 
 config = read('movie_catalogue/config.py')
 gradle = read('android/app/build.gradle.kts')
-need('0.3.24' in config, 'server version not bumped')
-need('versionName = "0.3.24"' in gradle, 'Android version not bumped')
+need('0.3.24' in config or '0.3.25' in config, 'server TV-support version missing')
+need('versionName = "0.3.24"' in gradle or 'versionName = "0.3.25"' in gradle, 'Android TV-support version missing')
 print('v0.3.24 TV support source contract checks passed')

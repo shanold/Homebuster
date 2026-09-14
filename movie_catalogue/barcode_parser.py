@@ -47,6 +47,69 @@ def _disc_count(match: re.Match[str]) -> int:
     token = match.group("count").lower()
     return int(token) if token.isdigit() else _DISC_COUNT_WORDS[token]
 
+_TV_SET_SUFFIX_PATTERN = re.compile(
+    r"(?:\s*[-–—,:;|]\s*|\s+)(?P<edition>(?:"
+    r"(?:The\s+)?Complete\s+(?:(?:First|Second|Third|Fourth|Fifth|Sixth|Seventh|Eighth|Ninth|Tenth|Eleventh|Twelfth|\d{1,2}(?:st|nd|rd|th)?)\s+Season|Series)(?:\s+Box\s*Set)?|"
+    r"Season\s+(?:\d{1,2}|One|Two|Three|Four|Five|Six|Seven|Eight|Nine|Ten|Eleven|Twelve)(?:\s*[-–]\s*(?:\d{1,2}|One|Two|Three|Four|Five|Six|Seven|Eight|Nine|Ten|Eleven|Twelve))?(?:\s+(?:Collection|Box\s*Set))?|"
+    r"Seasons\s+(?:\d{1,2}|One|Two|Three|Four|Five|Six|Seven|Eight|Nine|Ten|Eleven|Twelve)\s*[-–]\s*(?:\d{1,2}|One|Two|Three|Four|Five|Six|Seven|Eight|Nine|Ten|Eleven|Twelve)(?:\s+(?:Collection|Box\s*Set))?|"
+    r"Series\s+(?:\d{1,2}|One|Two|Three|Four|Five|Six|Seven|Eight|Nine|Ten|Eleven|Twelve)(?:\s*[-–]\s*(?:\d{1,2}|One|Two|Three|Four|Five|Six|Seven|Eight|Nine|Ten|Eleven|Twelve))?(?:\s+(?:Collection|Box\s*Set))?|"
+    r"Complete\s+Series(?:\s+(?:Collection|Box\s*Set))?|"
+    r"Complete\s+Collection(?:\s+Box\s*Set)?|"
+    r"Box\s*Set|"
+    r"Collection"
+    r"))\s*$",
+    re.I,
+)
+
+
+def _tv_set_suffix(value: str) -> re.Match[str] | None:
+    match = _TV_SET_SUFFIX_PATTERN.search(_normalize_spaces(value))
+    if not match:
+        return None
+    # Do not reinterpret a standalone title such as "The Collection" as copy metadata.
+    title_part = _strip_outer_separators(_normalize_spaces(value)[:match.start()])
+    if not title_part or title_part.casefold() in {"the", "a", "an"}:
+        return None
+    return match
+
+
+def _tv_set_search_title(value: str) -> str:
+    match = _tv_set_suffix(value)
+    if not match:
+        return _normalize_spaces(value)
+    return _strip_outer_separators(_normalize_spaces(value)[:match.start()])
+
+
+def _tv_set_edition(value: str) -> str | None:
+    match = _tv_set_suffix(value)
+    return _normalize_spaces(match.group("edition")) if match else None
+
+_TV_SET_EDITION_PATTERN = re.compile(
+    r"(?P<edition>(?:"
+    r"(?:The\s+)?Complete\s+(?:(?:First|Second|Third|Fourth|Fifth|Sixth|Seventh|Eighth|Ninth|Tenth|Eleventh|Twelfth|\d{1,2}(?:st|nd|rd|th)?)\s+Season|Series)(?:\s+Box\s*Set)?|"
+    r"Season\s+(?:\d{1,2}|One|Two|Three|Four|Five|Six|Seven|Eight|Nine|Ten|Eleven|Twelve)(?:\s*[-–]\s*(?:\d{1,2}|One|Two|Three|Four|Five|Six|Seven|Eight|Nine|Ten|Eleven|Twelve))?(?:\s+(?:Collection|Box\s*Set))?|"
+    r"Seasons\s+(?:\d{1,2}|One|Two|Three|Four|Five|Six|Seven|Eight|Nine|Ten|Eleven|Twelve)\s*[-–]\s*(?:\d{1,2}|One|Two|Three|Four|Five|Six|Seven|Eight|Nine|Ten|Eleven|Twelve)(?:\s+(?:Collection|Box\s*Set))?|"
+    r"Series\s+(?:\d{1,2}|One|Two|Three|Four|Five|Six|Seven|Eight|Nine|Ten|Eleven|Twelve)(?:\s*[-–]\s*(?:\d{1,2}|One|Two|Three|Four|Five|Six|Seven|Eight|Nine|Ten|Eleven|Twelve))?(?:\s+(?:Collection|Box\s*Set))?|"
+    r"Complete\s+Series(?:\s+(?:Collection|Box\s*Set))?|"
+    r"Complete\s+Collection(?:\s+Box\s*Set)?|"
+    r"Box\s*Set|Collection"
+    r"))", re.I,
+)
+
+
+def _tv_set_edition_from_leftover(value: str) -> str | None:
+    cleaned = _normalize_spaces(value)
+    for pattern, _ in _FORMAT_PATTERNS:
+        cleaned = pattern.sub(" ", cleaned)
+    cleaned = _DISC_PATTERN.sub(" ", cleaned)
+    cleaned = _REGION_PATTERN.sub(" ", cleaned)
+    cleaned = _PACKAGING_PATTERN.sub(" ", cleaned)
+    cleaned = _VIDEO_STANDARD_PATTERN.sub(" ", cleaned)
+    cleaned = _CATALOG_CATEGORY_PATTERN.sub(" ", cleaned) if '_CATALOG_CATEGORY_PATTERN' in globals() else cleaned
+    cleaned = _normalize_spaces(cleaned)
+    match = _TV_SET_EDITION_PATTERN.search(cleaned)
+    return _normalize_spaces(match.group("edition")) if match else None
+
 _REGION_PATTERN = re.compile(
     r"(?:Region\s*(?P<region>[1-8ABC])|(?P<free>Region[- ]?Free|All\s+Regions?))",
     re.I,
@@ -559,7 +622,7 @@ def _strip_canonical_title(raw: str, canonical_title: str) -> str:
     return raw
 
 
-def infer_copy_metadata_from_legacy_title(raw_title: str, canonical_title: str) -> dict:
+def infer_copy_metadata_from_legacy_title(raw_title: str, canonical_title: str, media_type: str = "movie") -> dict:
     """Recover physical-copy metadata after TMDb confirms the movie title.
 
     Unlike the conservative title parser, this pass can search the leftover
@@ -601,6 +664,10 @@ def infer_copy_metadata_from_legacy_title(raw_title: str, canonical_title: str) 
         language = " + ".join(language_matches)
 
     edition = parsed.edition
+    if str(media_type or "movie").strip().lower() == "tv":
+        tv_edition = _tv_set_edition(raw) or _tv_set_edition(leftover) or _tv_set_edition_from_leftover(leftover)
+        if tv_edition:
+            edition = tv_edition
     known_editions = list(_EDITION_PATTERN.finditer(leftover))
     if known_editions:
         # Prefer the most specific recognized edition text found outside the
@@ -610,7 +677,7 @@ def infer_copy_metadata_from_legacy_title(raw_title: str, canonical_title: str) 
         if prefix:
             disc_count = disc_count or _disc_count(prefix)
             edition = _strip_outer_separators(edition[prefix.end():])
-    else:
+    elif not edition:
         # Unknown marketing editions do not need a dictionary entry. First
         # remove other independently detected copy metadata so words such as
         # "Blu-ray" or "two disk" cannot become part of the edition label.
@@ -818,14 +885,29 @@ def _contains_strong_copy_metadata(value: str) -> bool:
     )
 
 
-def search_ready_movie_title_candidates(raw_title: str) -> list[str]:
-    """Prioritize shared title candidates that no longer contain strong copy metadata."""
-    candidates = generate_movie_title_candidates(raw_title)
+def search_ready_title_candidates(raw_title: str, media_type: str = "movie") -> list[str]:
+    """Return search candidates, stripping TV set/season suffixes only in TV mode."""
+    raw = _normalize_spaces(raw_title)
+    candidates: list[str] = []
+    is_tv = str(media_type or "movie").strip().lower() == "tv"
+    if is_tv:
+        tv_title = _tv_set_search_title(raw)
+        if tv_title and _normalized_title(tv_title) != _normalized_title(raw):
+            _append_unique_candidate(candidates, tv_title)
+    for value in generate_movie_title_candidates(raw):
+        if is_tv:
+            _append_unique_candidate(candidates, _tv_set_search_title(value))
+        _append_unique_candidate(candidates, value)
     if not candidates:
         return []
     clean = [value for value in candidates if not _contains_strong_copy_metadata(value)]
     noisy = [value for value in candidates if _contains_strong_copy_metadata(value)]
     return clean + noisy
+
+
+def search_ready_movie_title_candidates(raw_title: str) -> list[str]:
+    """Backward-compatible movie-only wrapper."""
+    return search_ready_title_candidates(raw_title, media_type="movie")
 
 def high_confidence_tmdb_match(query_titles: Iterable[str], query_year: int | None, results: Iterable[Mapping]) -> dict | None:
     """Choose only a decisive TMDb match across multiple search candidates."""

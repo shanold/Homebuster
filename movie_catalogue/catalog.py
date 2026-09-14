@@ -13,6 +13,7 @@ from .permissions import require_library_role
 from .barcode_parser import (
     generate_movie_title_candidates,
     search_ready_movie_title_candidates,
+    search_ready_title_candidates,
     high_confidence_tmdb_match,
     infer_legacy_title_year,
     infer_copy_metadata_from_legacy_title,
@@ -73,7 +74,8 @@ def _match_queries_for_movie(movie):
     """
     raw_title = (movie["title"] or "").strip()
     parsed = parse_barcode_product_title(raw_title)
-    query_titles = search_ready_movie_title_candidates(raw_title) or [raw_title]
+    media_type = _media_type(movie["media_type"] if "media_type" in movie.keys() else "movie")
+    query_titles = search_ready_title_candidates(raw_title, media_type=media_type) or [raw_title]
     query_year = movie["year"] if movie["year"] not in (None, "") else infer_legacy_title_year(raw_title)
     return query_titles, query_year
 
@@ -139,9 +141,9 @@ def _metadata_value_is_blank(value, *, unknown=False):
     return unknown and str(value).strip().casefold() == "unknown"
 
 
-def _copy_metadata_fill_values(movie, raw_title, canonical_title):
+def _copy_metadata_fill_values(movie, raw_title, canonical_title, media_type="movie"):
     """Fill only missing copy metadata using the TMDb-confirmed title as anchor."""
-    inferred = infer_copy_metadata_from_legacy_title(raw_title, canonical_title)
+    inferred = infer_copy_metadata_from_legacy_title(raw_title, canonical_title, media_type=media_type)
     values = {
         "format": movie["format"],
         "version": movie["version"],
@@ -166,7 +168,7 @@ def _copy_metadata_fill_values(movie, raw_title, canonical_title):
 def _apply_identified_movie(db, movie, data, tmdb_id, media_type=None):
     media_type = _media_type(media_type or movie["media_type"] if "media_type" in movie.keys() else "movie")
     canonical_title = data.get("title") or movie["title"]
-    values, inferred, metadata_changed = _copy_metadata_fill_values(movie, movie["title"], canonical_title)
+    values, inferred, metadata_changed = _copy_metadata_fill_values(movie, movie["title"], canonical_title, media_type=media_type)
     poster = _tmdb_poster_url(data.get("poster_path") or movie["poster_path"])
     release = data.get("release_date") or ""
     year = release[:4] if len(release) >= 4 and release[:4].isdigit() else movie["year"]
@@ -904,7 +906,7 @@ def match_repair_review(library_id, library, role):
     search_title = (request.args.get("search_title") or "").strip()
     media_type = _media_type(request.args.get("media_type") or (movie["media_type"] if "media_type" in movie.keys() else "movie"))
     if search_title:
-        query_titles = search_ready_movie_title_candidates(search_title)
+        query_titles = search_ready_title_candidates(search_title, media_type=media_type)
         if search_title not in query_titles:
             query_titles.insert(0, search_title)
         query_year = None
@@ -917,7 +919,7 @@ def match_repair_review(library_id, library, role):
         flash("TMDb search failed for this movie. You can skip it and continue.", "error")
     for result in results:
         result["metadata_preview"] = infer_copy_metadata_from_legacy_title(
-            movie["title"], result.get("title") or movie["title"]
+            movie["title"], result.get("title") or movie["title"], media_type=media_type
         )
     return render_template(
         "match_repair_review.html",
@@ -1013,7 +1015,7 @@ def identify_movie(library_id, movie_id, library, role):
         results = []; flash("TMDb search failed. Try again later.", "error")
     for result in results:
         result["metadata_preview"] = infer_copy_metadata_from_legacy_title(
-            movie["title"], result.get("title") or movie["title"]
+            movie["title"], result.get("title") or movie["title"], media_type=media_type
         )
     poster_size = current_app.config.get("TMDB_POSTER_SIZE", "w342")
     return render_template("identify.html", library=library, role=role, movie=movie, results=results, poster_size=poster_size, media_type=media_type)

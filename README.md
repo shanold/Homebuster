@@ -308,3 +308,8 @@ Web Add, Identify, and the persistent Match / Repair review queue have a Movie/T
 Android is updated to **v0.3.24 (versionCode 16)**. Movie/TV identity is carried through the API, collection grouping, details/cards, barcode search, and Add this copy. Barcode lookup defaults to Movie; selecting TV / Box Set explicitly reruns the match against TMDb TV. Continue signing release APKs with the same existing Homebuster release keystore.
 
 The Match / Repair **Refresh metadata for already matched movies** checkbox is also visually corrected so the checkbox sits inline with its label. It remains off by default.
+
+
+## v0.3.25 TV season / box-set parsing
+
+TV searches now treat trailing inventory descriptors such as `Season 1`, `Complete First Season`, `Complete Series`, `Box Set`, and collection-style set suffixes as copy metadata rather than part of the TMDb series title. For example, `Castle Season 1` searches TMDb TV for `Castle` and, after selection, stores `Season 1` in Edition. Movie searches remain unchanged. The shared TV-aware parser is used by web Identify/review/bulk matching and the Android-facing barcode API. Android is v0.3.25 (versionCode 17).

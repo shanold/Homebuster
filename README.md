@@ -1,3 +1,9 @@
+
+## v0.3.38
+- Replaces the hand-drawn shelf preview format marks with canonical Blu-ray Disc, DVD-Video, and Ultra HD Blu-ray artwork at their natural aspect ratios.
+- Combo packs render multiple format marks side-by-side without stretching.
+- Format marks load the canonical Wikimedia Commons public-domain text-logo SVGs directly; trademark rights remain with their respective owners.
+
 # Homebuster
 
 A community fork/rework of [TheMarveled/movie-cataloguer](https://github.com/TheMarveled/movie-cataloguer), focused on self-hosted personal and shared physical movie collections.

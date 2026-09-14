@@ -313,3 +313,10 @@ The Match / Repair **Refresh metadata for already matched movies** checkbox is a
 ## v0.3.25 TV season / box-set parsing
 
 TV searches now treat trailing inventory descriptors such as `Season 1`, `Complete First Season`, `Complete Series`, `Box Set`, and collection-style set suffixes as copy metadata rather than part of the TMDb series title. For example, `Castle Season 1` searches TMDb TV for `Castle` and, after selection, stores `Season 1` in Edition. Movie searches remain unchanged. The shared TV-aware parser is used by web Identify/review/bulk matching and the Android-facing barcode API. Android is v0.3.25 (versionCode 17).
+
+## v0.3.26 Identify TV override fix
+
+- Fixes **Identify with TMDb** when an existing row is still stored as Movie but the user switches the Identify page to TV.
+- The selected Movie/TV mode now controls title candidate parsing before TMDb search.
+- Example: `Castle Season 1` + TV now searches `Castle`, then preserves `Season 1` as copy metadata when selected.
+- Android remains v0.3.25 / versionCode 17; this is a server/web Identify-path fix.

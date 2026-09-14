@@ -66,7 +66,7 @@ def _media_type(value):
     return "tv" if str(value or "").strip().lower() == "tv" else "movie"
 
 
-def _match_queries_for_movie(movie):
+def _match_queries_for_movie(movie, media_type=None):
     """Build multiple safe TMDb search candidates for an existing movie.
 
     The stored title is never mutated by candidate generation. A structured
@@ -74,7 +74,7 @@ def _match_queries_for_movie(movie):
     """
     raw_title = (movie["title"] or "").strip()
     parsed = parse_barcode_product_title(raw_title)
-    media_type = _media_type(movie["media_type"] if "media_type" in movie.keys() else "movie")
+    media_type = _media_type(media_type or (movie["media_type"] if "media_type" in movie.keys() else "movie"))
     query_titles = search_ready_title_candidates(raw_title, media_type=media_type) or [raw_title]
     query_year = movie["year"] if movie["year"] not in (None, "") else infer_legacy_title_year(raw_title)
     return query_titles, query_year
@@ -1008,7 +1008,7 @@ def identify_movie(library_id, movie_id, library, role):
         flash(message, "success")
         return redirect(url_for("catalog.movie_detail", library_id=library_id, movie_id=movie_id))
     media_type = _media_type(request.args.get("media_type") or (movie["media_type"] if "media_type" in movie.keys() else "movie"))
-    query_titles, query_year = _match_queries_for_movie(movie)
+    query_titles, query_year = _match_queries_for_movie(movie, media_type=media_type)
     try:
         results = _tmdb_search_candidates(query_titles, query_year, media_type=media_type)
     except requests.RequestException:

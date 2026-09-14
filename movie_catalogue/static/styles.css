@@ -139,3 +139,16 @@
 
 @media(max-width:950px){.shelf-page-heading{align-items:flex-start;flex-direction:column}.shelf-row{--shelf-case-height:210px;--shelf-row-height:250px;column-gap:3px}.shelf-list-card-content{max-width:82%}}
 @media(max-width:620px){.shelf-view-controls{width:100%;align-items:stretch;flex-direction:column}.view-switch{width:100%}.view-switch-button{flex:1}.shelf-density-control,.shelf-density-control input{width:100%}.visual-shelf{padding:12px 7px 18px}.shelf-row{--shelf-case-height:190px;--shelf-row-height:225px;column-gap:3px;padding:12px 5px 16px}.shelf-case-title{font-size:8px}.shelf-list-card-content{max-width:92%}.shelf-list-card::before{inset:-25% -15% -25% 35%}.shelf-list-card::after{background:linear-gradient(90deg,var(--panel) 0 48%,rgba(25,29,38,.86) 68%,rgba(25,29,38,.66) 100%)}}
+
+
+/* v0.3.40 Homebuster wordmark */
+.topbar .brand-wordmark{
+  color:#b56cff;
+  font-family:Impact,Haettenschweiler,"Arial Black","Franklin Gothic Heavy",sans-serif;
+  font-size:24px;
+  font-weight:900;
+  letter-spacing:.035em;
+  line-height:1;
+  text-shadow:0 2px 0 #3b1457,0 0 10px rgba(181,108,255,.22);
+}
+@media(max-width:620px){.topbar .brand-wordmark{font-size:21px}}

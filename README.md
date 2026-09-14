@@ -409,3 +409,8 @@ Blu-ray/DVD combo packs remain a single physical inventory copy. Common scan spe
 
 ## v0.3.37 — Physical media case preview
 Shelf View case previews now render the poster as an insert inside a molded-looking format-specific case: blue Blu-ray, dark DVD, black 4K UHD, with locally rendered media marks and combo-pack badges.
+
+## v0.3.40
+
+- The **Show movies on other shelves** filter now applies immediately when checked or unchecked; the server-side shelf query remains the same and continues to exclude movies already on the current shelf.
+- The header **Homebuster** wordmark now uses a bold block-style local font stack and purple lettering while keeping the existing house icon and film-strip header.

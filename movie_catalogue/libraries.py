@@ -48,14 +48,13 @@ def settings(library_id, library, role):
         (library_id,),
     ).fetchall()
     counts = db.execute(
-        "SELECT (SELECT COUNT(*) FROM movies WHERE library_id=?) AS movies, "
+        "SELECT (SELECT COUNT(*) FROM movies WHERE library_id=? AND parent_box_set_id IS NULL) AS movies, "
         "(SELECT COUNT(*) FROM box_sets WHERE library_id=?) AS box_sets, "
-        "(SELECT COUNT(*) FROM box_set_members bsm JOIN box_sets bs ON bs.id=bsm.box_set_id WHERE bs.library_id=?) AS contained_films, "
+        "(SELECT COUNT(*) FROM movies WHERE library_id=? AND parent_box_set_id IS NOT NULL) AS contained_films, "
         "(SELECT COUNT(*) FROM shelves WHERE library_id=?) AS shelves, "
         "((SELECT COUNT(*) FROM loans WHERE library_id=? AND returned_date IS NULL) + "
-        " (SELECT COUNT(*) FROM box_set_loans WHERE library_id=? AND returned_date IS NULL) + "
-        " (SELECT COUNT(*) FROM box_set_member_loans WHERE library_id=? AND returned_date IS NULL)) AS loans",
-        (library_id, library_id, library_id, library_id, library_id, library_id, library_id),
+        " (SELECT COUNT(*) FROM box_set_loans WHERE library_id=? AND returned_date IS NULL)) AS loans",
+        (library_id, library_id, library_id, library_id, library_id, library_id),
     ).fetchone()
     return render_template("library_settings.html", library=library, role=role, members=members, counts=counts)
 

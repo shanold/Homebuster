@@ -89,11 +89,20 @@ def token_required(view):
     return wrapped
 
 
-def _movie_row(row):
+def _movie_row(row, db=None):
+    parent_id = row["parent_box_set_id"] if "parent_box_set_id" in row.keys() else None
+    parent = None
+    whole_loan = None
+    if db is not None and parent_id:
+        parent = db.execute("SELECT * FROM box_sets WHERE id=?", (parent_id,)).fetchone()
+        whole_loan = db.execute("SELECT * FROM box_set_loans WHERE box_set_id=? AND returned_date IS NULL ORDER BY id DESC LIMIT 1", (parent_id,)).fetchone()
+    active_loan = None
+    if db is not None:
+        active_loan = db.execute("SELECT * FROM loans WHERE movie_id=? AND returned_date IS NULL ORDER BY id DESC LIMIT 1", (row["id"],)).fetchone()
     return {
         "id": row["id"],
         "library_id": row["library_id"],
-        "shelf_id": row["shelf_id"],
+        "shelf_id": parent["shelf_id"] if parent else row["shelf_id"],
         "tmdb_id": row["tmdb_id"],
         "media_type": row["media_type"] if "media_type" in row.keys() else "movie",
         "title": row["title"],
@@ -101,16 +110,19 @@ def _movie_row(row):
         "overview": "",
         "poster_path": row["poster_path"],
         "runtime": None,
-        "format": row["format"] or "Unknown",
-        "upc": row["barcode"],
+        "format": (parent["format"] if parent else row["format"]) or "Unknown",
+        "upc": parent["barcode"] if parent else row["barcode"],
         "watched": False,
-        "status": row["status"],
-        "version": row["version"],
-        "country": row["country"],
-        "language": row["language"],
-        "region": row["region"],
-        "disc_count": row["disc_count"],
+        "status": parent["status"] if parent else row["status"],
+        "version": parent["version"] if parent else row["version"],
+        "country": parent["country"] if parent else row["country"],
+        "language": parent["language"] if parent else row["language"],
+        "region": parent["region"] if parent else row["region"],
+        "disc_count": parent["disc_count"] if parent else row["disc_count"],
         "notes": row["notes"],
+        "parent_box_set_id": parent_id,
+        "parent_box_set_name": parent["title"] if parent else None,
+        "loan_state": "loaned_with_box_set" if whole_loan else ("loaned" if active_loan else "available"),
     }
 
 
@@ -302,7 +314,7 @@ def collection_movies(collection_id):
         """,
         (collection_id, collection["library_id"]),
     ).fetchall()
-    return jsonify({"movies": [_movie_row(r) for r in rows]})
+    return jsonify({"movies": [_movie_row(r, db) for r in rows]})
 
 
 @bp.get("/movies")
@@ -332,7 +344,7 @@ def movies():
         args.append(library_id)
     sql += " ORDER BY m.title COLLATE NOCASE"
     rows = db.execute(sql, args).fetchall()
-    return jsonify({"movies": [_movie_row(r) for r in rows]})
+    return jsonify({"movies": [_movie_row(r, db) for r in rows]})
 
 
 @bp.get("/movies/<int:movie_id>")
@@ -345,7 +357,7 @@ def movie_detail(movie_id):
     library, role = _library_role(db, row["library_id"], g.api_user["id"])
     if not library:
         return _json_error("Movie not found", 404)
-    return jsonify({"movie": _movie_row(row)})
+    return jsonify({"movie": _movie_row(row, db)})
 
 
 @bp.post("/movies")
@@ -421,7 +433,7 @@ def add_movie():
     )
     db.commit()
     row = db.execute("SELECT * FROM movies WHERE id=?", (cur.lastrowid,)).fetchone()
-    return jsonify({"movie": _movie_row(row)}), 201
+    return jsonify({"movie": _movie_row(row, db)}), 201
 
 
 @bp.get("/loans")
@@ -538,7 +550,7 @@ def barcode_lookup(upc):
         else:
             existing = db.execute(f"SELECT * FROM movies WHERE library_id IN ({placeholders}) AND barcode=? ORDER BY id LIMIT 1", [*ids, upc]).fetchone()
             if existing:
-                return jsonify({"status": "owned", "movie": _movie_row(existing), "upc": upc})
+                return jsonify({"status": "owned", "movie": _movie_row(existing, db), "upc": upc})
     try:
         product = barcode_product_lookup(upc)
     except Exception as exc:
@@ -632,9 +644,9 @@ def box_sets_list():
     if library_id is not None and library_id not in ids: return _json_error("Library not found",404)
     target=[library_id] if library_id is not None else ids
     ph=','.join('?' for _ in target); q=(request.args.get('q') or '').strip(); params=list(target)
-    sql=f"SELECT DISTINCT bs.* FROM box_sets bs LEFT JOIN box_set_members bsm ON bsm.box_set_id=bs.id WHERE bs.library_id IN ({ph})"
+    sql=f"SELECT DISTINCT bs.* FROM box_sets bs LEFT JOIN movies cm ON cm.parent_box_set_id=bs.id WHERE bs.library_id IN ({ph})"
     if q:
-        sql+=" AND (bs.title LIKE ? OR bs.barcode LIKE ? OR bsm.title LIKE ?)"; needle=f"%{q}%"; params.extend([needle,needle,needle])
+        sql+=" AND (bs.title LIKE ? OR bs.barcode LIKE ? OR cm.title LIKE ?)"; needle=f"%{q}%"; params.extend([needle,needle,needle])
     sql+=" ORDER BY bs.title COLLATE NOCASE"
     return jsonify({"box_sets":[_box_set_row(db,r) for r in db.execute(sql,params).fetchall()]})
 
@@ -699,7 +711,7 @@ def return_box_set_api(box_set_id):
 @bp.post("/box-set-members/<int:member_id>/loan")
 @token_required
 def loan_box_set_member_api(member_id):
-    db=get_db(); member=db.execute("SELECT bsm.*,bs.library_id FROM box_set_members bsm JOIN box_sets bs ON bs.id=bsm.box_set_id WHERE bsm.id=?",(member_id,)).fetchone()
+    db=get_db(); member=db.execute("SELECT m.*,m.parent_box_set_id AS box_set_id FROM movies m WHERE m.id=? AND m.parent_box_set_id IS NOT NULL",(member_id,)).fetchone()
     if not member:return _json_error("Contained film not found",404)
     library,role=_library_role(db,member["library_id"],g.api_user["id"])
     if not library or ROLE_LEVEL[role]<ROLE_LEVEL["editor"]:return _json_error("Library is not editable",403)
@@ -712,7 +724,7 @@ def loan_box_set_member_api(member_id):
 @bp.post("/box-set-members/<int:member_id>/return")
 @token_required
 def return_box_set_member_api(member_id):
-    db=get_db(); member=db.execute("SELECT bsm.*,bs.library_id FROM box_set_members bsm JOIN box_sets bs ON bs.id=bsm.box_set_id WHERE bsm.id=?",(member_id,)).fetchone()
+    db=get_db(); member=db.execute("SELECT m.*,m.parent_box_set_id AS box_set_id FROM movies m WHERE m.id=? AND m.parent_box_set_id IS NOT NULL",(member_id,)).fetchone()
     if not member:return _json_error("Contained film not found",404)
     library,role=_library_role(db,member["library_id"],g.api_user["id"])
     if not library or ROLE_LEVEL[role]<ROLE_LEVEL["editor"]:return _json_error("Library is not editable",403)

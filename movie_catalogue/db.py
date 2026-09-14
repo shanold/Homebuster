@@ -129,10 +129,13 @@ def _create_catalog_tables(db: sqlite3.Connection) -> None:
             review_pending INTEGER NOT NULL DEFAULT 0,
             notes TEXT,
             shelf_id INTEGER,
+            parent_box_set_id INTEGER,
+            parent_box_set_position INTEGER,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(library_id) REFERENCES libraries(id) ON DELETE CASCADE,
-            FOREIGN KEY(shelf_id) REFERENCES shelves(id) ON DELETE SET NULL
+            FOREIGN KEY(shelf_id) REFERENCES shelves(id) ON DELETE SET NULL,
+            FOREIGN KEY(parent_box_set_id) REFERENCES box_sets(id) ON DELETE CASCADE
         );
         CREATE INDEX IF NOT EXISTS idx_movies_library_title ON movies(library_id, title COLLATE NOCASE);
         CREATE INDEX IF NOT EXISTS idx_movies_library_status ON movies(library_id, status);
@@ -257,10 +260,95 @@ def _ensure_catalog_columns(db: sqlite3.Connection) -> None:
     movie_cols = table_columns(db, "movies")
     if movie_cols and "media_type" not in movie_cols:
         db.execute("ALTER TABLE movies ADD COLUMN media_type TEXT NOT NULL DEFAULT 'movie'")
+    movie_cols = table_columns(db, "movies")
+    if movie_cols and "parent_box_set_id" not in movie_cols:
+        db.execute("ALTER TABLE movies ADD COLUMN parent_box_set_id INTEGER")
+    movie_cols = table_columns(db, "movies")
+    if movie_cols and "parent_box_set_position" not in movie_cols:
+        db.execute("ALTER TABLE movies ADD COLUMN parent_box_set_position INTEGER")
+    if movie_cols:
+        db.execute("CREATE INDEX IF NOT EXISTS idx_movies_parent_box_set ON movies(parent_box_set_id, parent_box_set_position, id)")
+        db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_movies_parent_tmdb_unique ON movies(parent_box_set_id, tmdb_id) WHERE parent_box_set_id IS NOT NULL AND tmdb_id IS NOT NULL")
     library_cols = table_columns(db, "libraries")
     if library_cols and "show_box_set_members" not in library_cols:
         db.execute("ALTER TABLE libraries ADD COLUMN show_box_set_members INTEGER NOT NULL DEFAULT 0")
 
+
+
+def _migrate_box_set_members_to_movies(db: sqlite3.Connection) -> None:
+    """Promote v0.3.27 lightweight box-set members and their loans into first-class movies.
+
+    Legacy tables are retained as rollback/source data, but promotion is deliberately one-time.
+    Otherwise a contained film intentionally removed in v0.3.28 would be recreated from the
+    old legacy row on the next startup.
+    """
+    db.execute("CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+    marker = db.execute("SELECT value FROM app_meta WHERE key='v0328_box_set_member_promotion'").fetchone()
+    if marker and str(marker[0]) == "1":
+        return
+    if not (table_exists(db, "box_sets") and table_exists(db, "box_set_members") and table_exists(db, "movies")):
+        return
+    if "parent_box_set_id" not in table_columns(db, "movies"):
+        return
+
+    members = db.execute(
+        """SELECT bsm.*, bs.library_id
+           FROM box_set_members bsm JOIN box_sets bs ON bs.id=bsm.box_set_id
+           ORDER BY bsm.box_set_id,bsm.position,bsm.id"""
+    ).fetchall()
+    legacy_to_movie = {}
+    for member in members:
+        existing = None
+        if member["tmdb_id"] is not None:
+            existing = db.execute(
+                "SELECT id FROM movies WHERE parent_box_set_id=? AND tmdb_id=? AND media_type='movie' ORDER BY id LIMIT 1",
+                (member["box_set_id"], member["tmdb_id"]),
+            ).fetchone()
+        if existing is None:
+            existing = db.execute(
+                """SELECT id FROM movies WHERE parent_box_set_id=? AND title=? COLLATE NOCASE
+                   AND COALESCE(year,'')=COALESCE(?, '') ORDER BY id LIMIT 1""",
+                (member["box_set_id"], member["title"], member["year"]),
+            ).fetchone()
+        if existing:
+            movie_id = int(existing["id"] if hasattr(existing, "keys") else existing[0])
+            db.execute(
+                """UPDATE movies SET tmdb_id=COALESCE(tmdb_id,?), poster_path=COALESCE(poster_path,?),
+                   parent_box_set_position=COALESCE(parent_box_set_position,?), updated_at=CURRENT_TIMESTAMP WHERE id=?""",
+                (member["tmdb_id"], member["poster_path"], member["position"], movie_id),
+            )
+        else:
+            cur = db.execute(
+                """INSERT INTO movies(
+                    library_id,title,year,poster_path,tmdb_id,media_type,status,review_pending,parent_box_set_id,parent_box_set_position
+                ) VALUES (?,?,?,?,?,'movie','owned',0,?,?)""",
+                (member["library_id"], member["title"], member["year"], member["poster_path"], member["tmdb_id"],
+                 member["box_set_id"], member["position"]),
+            )
+            movie_id = int(cur.lastrowid)
+        legacy_to_movie[int(member["id"])] = movie_id
+
+    if table_exists(db, "box_set_member_loans"):
+        for legacy_loan in db.execute("SELECT * FROM box_set_member_loans ORDER BY id").fetchall():
+            movie_id = legacy_to_movie.get(int(legacy_loan["box_set_member_id"]))
+            if not movie_id:
+                continue
+            duplicate = db.execute(
+                """SELECT 1 FROM loans WHERE movie_id=? AND borrower_name=? AND loaned_date=?
+                   AND COALESCE(phone,'')=COALESCE(?, '') AND COALESCE(notes,'')=COALESCE(?, '') LIMIT 1""",
+                (movie_id, legacy_loan["borrower_name"], legacy_loan["loaned_date"], legacy_loan["phone"], legacy_loan["notes"]),
+            ).fetchone()
+            if duplicate:
+                continue
+            db.execute(
+                """INSERT INTO loans(library_id,movie_id,borrower_name,phone,loaned_date,returned_date,notes,created_at)
+                   VALUES (?,?,?,?,?,?,?,?)""",
+                (legacy_loan["library_id"], movie_id, legacy_loan["borrower_name"], legacy_loan["phone"],
+                 legacy_loan["loaned_date"], legacy_loan["returned_date"], legacy_loan["notes"], legacy_loan["created_at"]),
+            )
+    db.execute(
+        "INSERT OR REPLACE INTO app_meta(key,value) VALUES ('v0328_box_set_member_promotion','1')"
+    )
 
 def _bootstrap_admin(db: sqlite3.Connection) -> None:
     username = (current_app.config.get("INITIAL_ADMIN_USERNAME") or "").strip()
@@ -407,6 +495,7 @@ def initialize_database() -> None:
     _migrate_legacy(db)
     _create_catalog_tables(db)
     _ensure_catalog_columns(db)
+    _migrate_box_set_members_to_movies(db)
     db.commit()
 
 

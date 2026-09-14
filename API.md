@@ -49,3 +49,9 @@ Authenticated API clients can use:
 - `GET /api/v1/barcodes/<upc>?media_type=collection` — UPC product lookup followed only by TMDb Collection candidates.
 
 `media_type=collection` is explicit and never fans out into Movie or TV searches. Whole-set and contained-film loans are mutually exclusive while active; conflicting API loan requests return HTTP `409`.
+
+## v0.3.28 box-set member model
+
+Contained films are first-class movie records. Movie JSON may include `parent_box_set_id`, `parent_box_set_name`, and `loan_state`. A contained movie inherits physical copy context such as format, UPC, region and shelf from its parent box set. Box-set `members` now use the same IDs as `/api/v1/movies/{id}`.
+
+The compatibility endpoints `/api/v1/box-set-members/{id}/loan` and `/return` now operate on those first-class movie IDs and use the standard `loans` table. New clients may instead use the normal movie loan workflow when available.

@@ -1,17 +1,18 @@
 {% extends 'base.html' %}{% block content %}{% include '_library_nav.html' %}
-<div class="page-heading"><div><h2>Identify with TMDb</h2><p>Current item: <strong>{{ movie.title }}</strong>. Search type: <strong>{{ 'TV / Box Set' if media_type == 'tv' else 'Movie' }}</strong>.</p></div></div>
+<div class="page-heading"><div><h2>Identify with TMDb</h2><p>Current item: <strong>{{ movie.title }}</strong>. Search type: <strong>{% if media_type=='collection' %}Movie Collection / Box Set{% elif media_type=='tv' %}TV / Box Set{% else %}Movie{% endif %}</strong>.</p></div></div>
 <section class="panel">
 <form method="get" class="tmdb-search-form">
-<label>Type<select name="media_type"><option value="movie" {% if media_type != 'tv' %}selected{% endif %}>Movie</option><option value="tv" {% if media_type == 'tv' %}selected{% endif %}>TV / Box Set</option></select></label>
+<label>Type<select name="media_type"><option value="movie" {% if media_type=='movie' %}selected{% endif %}>Movie</option><option value="tv" {% if media_type=='tv' %}selected{% endif %}>TV / Box Set</option>{% if not movie.parent_box_set_id %}<option value="collection" {% if media_type=='collection' %}selected{% endif %}>Movie Collection / Box Set</option>{% endif %}</select></label>
 <button class="primary">Search as selected type</button>
 </form>
+{% if media_type=='collection' %}<p class="muted">Choosing a collection converts this physical inventory item into one box set and automatically creates clickable movie records for the films inside it.</p>{% endif %}
 </section>
 <div class="movie-grid identify-grid">
 {% for result in results %}
 <div class="movie-card static"><div class="poster-wrap">{% if result.poster_path %}<img src="https://image.tmdb.org/t/p/{{ poster_size }}{{ result.poster_path }}" alt="">{% else %}<div class="poster-placeholder">🎬</div>{% endif %}</div><div class="movie-meta">
-<span class="tag">{{ 'TV' if media_type == 'tv' else 'Movie' }}</span><h3>{{ result.title }}</h3><p>{{ (result.release_date or '')[:4] or 'Year unknown' }}</p>
-{% set meta=result.metadata_preview %}{% if meta and (meta.format or meta.edition or meta.language or meta.region or meta.disc_count) %}<div class="detected-meta"><strong>Detected copy metadata</strong>{% if meta.format %}<p>Format: {{ meta.format }}</p>{% endif %}{% if meta.edition %}<p>Edition: {{ meta.edition }}</p>{% endif %}{% if meta.disc_count %}<p>Discs: {{ meta.disc_count }}</p>{% endif %}{% if meta.region %}<p>Region: {{ meta.region }}</p>{% endif %}{% if meta.language %}<p>Language: {{ meta.language }}</p>{% endif %}</div>{% endif %}
-<form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="tmdb_id" value="{{ result.id }}"><input type="hidden" name="media_type" value="{{ media_type }}"><button class="primary">Use this match</button></form>
+<span class="tag">{% if media_type=='collection' %}Movie Collection{% elif media_type=='tv' %}TV{% else %}Movie{% endif %}</span><h3>{{ result.title }}</h3>{% if media_type!='collection' %}<p>{{ (result.release_date or '')[:4] or 'Year unknown' }}</p>{% endif %}
+{% if media_type!='collection' %}{% set meta=result.metadata_preview %}{% if meta and (meta.format or meta.edition or meta.language or meta.region or meta.disc_count) %}<div class="detected-meta"><strong>Detected copy metadata</strong>{% if meta.format %}<p>Format: {{ meta.format }}</p>{% endif %}{% if meta.edition %}<p>Edition: {{ meta.edition }}</p>{% endif %}{% if meta.disc_count %}<p>Discs: {{ meta.disc_count }}</p>{% endif %}{% if meta.region %}<p>Region: {{ meta.region }}</p>{% endif %}{% if meta.language %}<p>Language: {{ meta.language }}</p>{% endif %}</div>{% endif %}{% endif %}
+<form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="tmdb_id" value="{{ result.id }}"><input type="hidden" name="media_type" value="{{ media_type }}"><button class="primary">{% if media_type=='collection' %}Use this collection{% else %}Use this match{% endif %}</button></form>
 </div></div>
-{% else %}<div class="empty">No TMDb results found. Try the other media type.</div>{% endfor %}
+{% else %}<div class="empty">No TMDb results found. Try another type or adjust the title.</div>{% endfor %}
 </div>{% endblock %}

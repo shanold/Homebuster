@@ -328,3 +328,14 @@ Homebuster now supports physical movie box sets as first-class inventory items. 
 Whole box sets and individual contained films can be loaned. An individual film loan marks the parent incomplete and blocks a whole-set loan until it returns; a whole-set loan makes every contained film effectively unavailable without creating fake child loan records. Homebuster intentionally does not track which exact physical disc contains each movie. Existing user-created Homebuster Collections remain separate from physical Movie Box Sets / TMDb Collections.
 
 The server API includes first-class box-set and TMDb Collection endpoints plus explicit barcode `media_type=collection` lookup. Android box-set UI is intentionally deferred for this web/server-first release; existing Android release signing behavior is unchanged.
+
+## v0.3.28 — First-Class Movies Inside Physical Box Sets
+
+- Films contained in a physical movie box set are now normal Homebuster movie records linked to the parent set.
+- Opening a box set shows clickable films that use the normal movie detail page and normal borrower/phone/date/notes loan workflow.
+- Parent box-set physical data (barcode, format, shelf, region, edition and disc count) is inherited for contained-film display instead of being duplicated on each child.
+- Whole-set loans make every child show **Loaned with box set**; an individual child loan blocks whole-set checkout, and a whole-set loan blocks child checkout.
+- Contained films remain hidden from the main grid by default, can be enabled in Library Settings, and are always searchable.
+- **Identify with TMDb** and persistent **Review unmatched titles** now include **Movie Collection / Box Set**, using TMDb Collection search without probing Movie/TV endpoints automatically.
+- Existing v0.3.27 lightweight box-set members and member-loan history are promoted idempotently on startup into first-class movie rows and standard movie loans.
+- Movie CSV now records parent box-set linkage; Box Set CSV continues to recreate the parent and its contained films.

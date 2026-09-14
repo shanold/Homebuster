@@ -9,8 +9,9 @@ from flask import Blueprint, Response, abort, current_app, flash, jsonify, redir
 from flask_login import current_user, login_required
 
 from .db import get_db
-from .box_set_service import box_set_effective_state, member_effective_state
+from .box_set_service import box_set_effective_state, member_effective_state, convert_movie_to_box_set
 from .permissions import require_library_role
+from .integrations import tmdb_collection_search, tmdb_collection_details
 from .barcode_parser import (
     generate_movie_title_candidates,
     search_ready_movie_title_candidates,
@@ -19,6 +20,7 @@ from .barcode_parser import (
     infer_legacy_title_year,
     infer_copy_metadata_from_legacy_title,
     parse_barcode_product_title,
+    movie_box_set_title_candidates,
 )
 
 bp = Blueprint("catalog", __name__)
@@ -40,7 +42,15 @@ def _group_movie_rows(rows):
     by_key = {}
     for raw in rows:
         movie = dict(raw)
-        key = ("tmdb", movie.get("media_type") or "movie", movie.get("tmdb_id")) if movie.get("tmdb_id") else ("copy", movie.get("id"))
+        if movie.get("parent_box_set_id"):
+            movie["format"] = movie.get("format") or movie.get("parent_format")
+            movie["shelf_name"] = movie.get("shelf_name") or movie.get("parent_shelf_name")
+            movie["box_set_title"] = movie.get("parent_box_set_title")
+            movie["loan_state"] = "loaned_with_box_set" if movie.get("parent_whole_loan_id") else ("loaned_individually" if movie.get("active_loan_id") else "available")
+            if movie.get("parent_whole_loan_id") and not movie.get("active_loan_id"):
+                movie["active_loan_id"] = movie.get("parent_whole_loan_id")
+                movie["borrower_name"] = movie.get("parent_whole_borrower")
+        key = ("tmdb", movie.get("media_type") or "movie", movie.get("tmdb_id"), movie.get("parent_box_set_id")) if movie.get("tmdb_id") else ("copy", movie.get("id"))
         group = by_key.get(key)
         if group is None:
             group = dict(movie)
@@ -68,6 +78,11 @@ def _media_type(value):
     return "tv" if str(value or "").strip().lower() == "tv" else "movie"
 
 
+def _identify_type(value):
+    value = str(value or "movie").strip().lower()
+    return value if value in {"movie", "tv", "collection"} else "movie"
+
+
 def _match_queries_for_movie(movie, media_type=None):
     """Build multiple safe TMDb search candidates for an existing movie.
 
@@ -76,8 +91,11 @@ def _match_queries_for_movie(movie, media_type=None):
     """
     raw_title = (movie["title"] or "").strip()
     parsed = parse_barcode_product_title(raw_title)
-    media_type = _media_type(media_type or (movie["media_type"] if "media_type" in movie.keys() else "movie"))
-    query_titles = search_ready_title_candidates(raw_title, media_type=media_type) or [raw_title]
+    media_type = _identify_type(media_type or (movie["media_type"] if "media_type" in movie.keys() else "movie"))
+    if media_type == "collection":
+        query_titles = movie_box_set_title_candidates(raw_title) or [raw_title]
+    else:
+        query_titles = search_ready_title_candidates(raw_title, media_type=media_type) or [raw_title]
     query_year = movie["year"] if movie["year"] not in (None, "") else infer_legacy_title_year(raw_title)
     return query_titles, query_year
 
@@ -272,36 +290,57 @@ def library_home(library_id, library, role):
     sort = (request.args.get("sort") or "title").strip()
     page = max(1, request.args.get("page", 1, type=int))
     page_size = min(max(12, int(current_app.config.get("PAGE_SIZE", 60))), 200)
+    show_members = bool(library["show_box_set_members"] if "show_box_set_members" in library.keys() else 0)
 
     where = ["m.library_id=?"]
     params = [library_id]
+    # Contained movies are real movie rows, but the normal grid hides them unless
+    # the library opts in. A search always includes them so ownership is discoverable.
+    if not show_members and not q:
+        where.append("m.parent_box_set_id IS NULL")
     if q:
         needle = f"%{q}%"
-        where.append("(m.title LIKE ? OR m.year LIKE ? OR m.barcode LIKE ? OR m.notes LIKE ?)")
-        params.extend([needle, needle, needle, needle])
+        where.append("(m.title LIKE ? OR m.year LIKE ? OR m.barcode LIKE ? OR m.notes LIKE ? OR pbs.title LIKE ?)")
+        params.extend([needle, needle, needle, needle, needle])
     if status:
-        where.append("m.status=?"); params.append(status)
+        where.append("COALESCE(pbs.status,m.status)=?"); params.append(status)
     if fmt:
-        where.append("m.format=?"); params.append(fmt)
-    if shelf_raw == "unassigned": where.append("m.shelf_id IS NULL")
-    elif shelf: where.append("m.shelf_id=?"); params.append(shelf)
+        where.append("COALESCE(NULLIF(m.format,''),pbs.format)=?"); params.append(fmt)
+    if shelf_raw == "unassigned":
+        where.append("COALESCE(m.shelf_id,pbs.shelf_id) IS NULL")
+    elif shelf:
+        where.append("COALESCE(m.shelf_id,pbs.shelf_id)=?"); params.append(shelf)
     if collection:
         where.append("EXISTS (SELECT 1 FROM movie_collections mc WHERE mc.movie_id=m.id AND mc.collection_id=?)"); params.append(collection)
-    if availability == "loaned": where.append("l.id IS NOT NULL")
-    elif availability == "available": where.append("l.id IS NULL")
+    if availability == "loaned":
+        where.append("(l.id IS NOT NULL OR pbsl.id IS NOT NULL)")
+    elif availability == "available":
+        where.append("l.id IS NULL AND pbsl.id IS NULL")
 
     order_sql = {
-        "title": "m.title COLLATE NOCASE ASC", "year": "COALESCE(m.year,'') DESC, m.title COLLATE NOCASE ASC",
-        "recent": "m.id DESC", "shelf": "COALESCE(s.sort_order,999999), COALESCE(s.name,''), m.title COLLATE NOCASE",
+        "title": "m.title COLLATE NOCASE ASC",
+        "year": "COALESCE(m.year,'') DESC, m.title COLLATE NOCASE ASC",
+        "recent": "m.id DESC",
+        "shelf": "COALESCE(ps.sort_order,s.sort_order,999999), COALESCE(ps.name,s.name,''), m.title COLLATE NOCASE",
     }.get(sort, "m.title COLLATE NOCASE ASC")
     physical_rows = db.execute(
-        "SELECT m.*, s.name AS shelf_name, l.id AS active_loan_id, l.borrower_name, l.loaned_date "
-        "FROM movies m LEFT JOIN shelves s ON s.id=m.shelf_id LEFT JOIN loans l ON l.movie_id=m.id AND l.returned_date IS NULL "
-        " WHERE " + " AND ".join(where) + f" ORDER BY {order_sql}", params,
+        """SELECT m.*, s.name AS shelf_name,
+                  pbs.title AS parent_box_set_title,pbs.format AS parent_format,pbs.barcode AS parent_barcode,
+                  pbs.version AS parent_version,pbs.region AS parent_region,pbs.disc_count AS parent_disc_count,
+                  ps.name AS parent_shelf_name,
+                  l.id AS active_loan_id,l.borrower_name,l.loaned_date,
+                  pbsl.id AS parent_whole_loan_id,pbsl.borrower_name AS parent_whole_borrower
+           FROM movies m
+           LEFT JOIN shelves s ON s.id=m.shelf_id
+           LEFT JOIN box_sets pbs ON pbs.id=m.parent_box_set_id
+           LEFT JOIN shelves ps ON ps.id=pbs.shelf_id
+           LEFT JOIN loans l ON l.movie_id=m.id AND l.returned_date IS NULL
+           LEFT JOIN box_set_loans pbsl ON pbsl.box_set_id=m.parent_box_set_id AND pbsl.returned_date IS NULL
+           WHERE """ + " AND ".join(where) + f" ORDER BY {order_sql}", params,
     ).fetchall()
     items = _group_movie_rows(physical_rows)
 
-    # Movie box sets are separate physical inventory objects. Member rows are display/search identities only.
+    # Parent box sets are separate physical inventory objects.
     bs_where = ["bs.library_id=?"]
     bs_params = [library_id]
     if status: bs_where.append("bs.status=?"); bs_params.append(status)
@@ -310,41 +349,36 @@ def library_home(library_id, library, role):
     elif shelf: bs_where.append("bs.shelf_id=?"); bs_params.append(shelf)
     if q:
         needle=f"%{q}%"
-        bs_where.append("(bs.title LIKE ? OR bs.barcode LIKE ? OR bs.notes LIKE ? OR EXISTS (SELECT 1 FROM box_set_members bsm WHERE bsm.box_set_id=bs.id AND bsm.title LIKE ?))")
+        bs_where.append("(bs.title LIKE ? OR bs.barcode LIKE ? OR bs.notes LIKE ? OR EXISTS (SELECT 1 FROM movies cm WHERE cm.parent_box_set_id=bs.id AND cm.title LIKE ?))")
         bs_params.extend([needle,needle,needle,needle])
     box_rows = [] if collection else db.execute(
-        "SELECT bs.*,s.name AS shelf_name,(SELECT COUNT(*) FROM box_set_members bsm WHERE bsm.box_set_id=bs.id) AS member_count "
-        "FROM box_sets bs LEFT JOIN shelves s ON s.id=bs.shelf_id WHERE " + " AND ".join(bs_where) + " ORDER BY bs.title COLLATE NOCASE", bs_params
+        """SELECT bs.*,s.name AS shelf_name,
+                  (SELECT COUNT(*) FROM movies cm WHERE cm.parent_box_set_id=bs.id) AS member_count
+           FROM box_sets bs LEFT JOIN shelves s ON s.id=bs.shelf_id
+           WHERE """ + " AND ".join(bs_where) + " ORDER BY bs.title COLLATE NOCASE", bs_params
     ).fetchall()
-    show_members = bool(library["show_box_set_members"] if "show_box_set_members" in library.keys() else 0)
     for row in box_rows:
         state=box_set_effective_state(db,row["id"])
         if availability == "loaned" and state["state"] == "available": continue
         if availability == "available" and state["state"] != "available": continue
-        item=dict(row); item.update({"item_type":"box_set","loan_state":state["state"],"active_loan_id":state["whole_loan"]["id"] if state["whole_loan"] else None})
+        item=dict(row)
+        item.update({"item_type":"box_set","loan_state":state["state"],"active_loan_id":state["whole_loan"]["id"] if state["whole_loan"] else None})
         items.append(item)
-        member_rows=db.execute("SELECT * FROM box_set_members WHERE box_set_id=? ORDER BY position,id",(row["id"],)).fetchall()
-        for member in member_rows:
-            member_matches = (not q) or q.casefold() in (member["title"] or "").casefold()
-            if not show_members and not (q and member_matches): continue
-            if q and not member_matches: continue
-            effective=member_effective_state(db,member["id"])
-            items.append({"item_type":"box_set_member","id":member["id"],"box_set_id":row["id"],"box_set_title":row["title"],"title":member["title"],"year":member["year"],"poster_path":member["poster_path"],"format":row["format"],"shelf_name":row["shelf_name"],"loan_state":effective["state"]})
 
     if sort == "recent": items.sort(key=lambda x: int(x.get("id") or 0), reverse=True)
     elif sort == "year": items.sort(key=lambda x: (str(x.get("year") or ""), str(x.get("title") or "").casefold()), reverse=True)
     else: items.sort(key=lambda x: str(x.get("title") or "").casefold())
     total=len(items); offset=(page-1)*page_size; movies=items[offset:offset+page_size]
-    physical_item_count=len(_group_movie_rows(db.execute("SELECT * FROM movies WHERE library_id=?",(library_id,)).fetchall())) + db.execute("SELECT COUNT(*) FROM box_sets WHERE library_id=?",(library_id,)).fetchone()[0]
-    contained_titles=db.execute("SELECT COUNT(*) FROM box_set_members bsm JOIN box_sets bs ON bs.id=bsm.box_set_id WHERE bs.library_id=?",(library_id,)).fetchone()[0]
+    standalone_rows=db.execute("SELECT * FROM movies WHERE library_id=? AND parent_box_set_id IS NULL",(library_id,)).fetchall()
+    physical_item_count=len(_group_movie_rows(standalone_rows)) + db.execute("SELECT COUNT(*) FROM box_sets WHERE library_id=?",(library_id,)).fetchone()[0]
+    contained_titles=db.execute("SELECT COUNT(*) FROM movies WHERE library_id=? AND parent_box_set_id IS NOT NULL",(library_id,)).fetchone()[0]
     shelves=db.execute("SELECT * FROM shelves WHERE library_id=? ORDER BY sort_order,name COLLATE NOCASE",(library_id,)).fetchall()
     collections=db.execute("SELECT c.*,COUNT(mc.movie_id) AS movie_count FROM collections c LEFT JOIN movie_collections mc ON mc.collection_id=c.id WHERE c.library_id=? GROUP BY c.id ORDER BY c.name COLLATE NOCASE",(library_id,)).fetchall()
-    formats=[r[0] for r in db.execute("SELECT format FROM (SELECT format FROM movies WHERE library_id=? UNION SELECT format FROM box_sets WHERE library_id=?) WHERE format IS NOT NULL AND format<>'' ORDER BY format",(library_id,library_id)).fetchall()]
-    active_loans=(db.execute("SELECT COUNT(*) FROM loans WHERE library_id=? AND returned_date IS NULL",(library_id,)).fetchone()[0]+db.execute("SELECT COUNT(*) FROM box_set_loans WHERE library_id=? AND returned_date IS NULL",(library_id,)).fetchone()[0]+db.execute("SELECT COUNT(*) FROM box_set_member_loans WHERE library_id=? AND returned_date IS NULL",(library_id,)).fetchone()[0])
-    pending_review_count=db.execute("SELECT COUNT(*) FROM movies WHERE library_id=? AND review_pending=1",(library_id,)).fetchone()[0]
+    formats=[r[0] for r in db.execute("SELECT format FROM (SELECT format FROM movies WHERE library_id=? AND parent_box_set_id IS NULL UNION SELECT format FROM box_sets WHERE library_id=?) WHERE format IS NOT NULL AND format<>'' ORDER BY format",(library_id,library_id)).fetchall()]
+    active_loans=(db.execute("SELECT COUNT(*) FROM loans WHERE library_id=? AND returned_date IS NULL",(library_id,)).fetchone()[0]+db.execute("SELECT COUNT(*) FROM box_set_loans WHERE library_id=? AND returned_date IS NULL",(library_id,)).fetchone()[0])
+    pending_review_count=db.execute("SELECT COUNT(*) FROM movies WHERE library_id=? AND review_pending=1 AND parent_box_set_id IS NULL",(library_id,)).fetchone()[0]
     pages=max(1,(total+page_size-1)//page_size)
     return render_template("catalogue.html",library=library,role=role,movies=movies,shelves=shelves,collections=collections,formats=formats,active_loans=active_loans,pending_review_count=pending_review_count,total=total,physical_item_count=physical_item_count,contained_titles=contained_titles,page=page,pages=pages)
-
 
 @bp.route("/libraries/<int:library_id>/movies/new", methods=["GET", "POST"])
 @login_required
@@ -480,7 +514,24 @@ def movie_new_manual(library_id, library, role):
 @require_library_role("viewer")
 def movie_detail(library_id, movie_id, library, role):
     db = get_db(); movie = _get_movie(library_id, movie_id)
-    shelf = db.execute("SELECT * FROM shelves WHERE id=?", (movie["shelf_id"],)).fetchone() if movie["shelf_id"] else None
+    parent_box_set = None
+    parent_whole_loan = None
+    if movie["parent_box_set_id"]:
+        parent_box_set = db.execute(
+            """SELECT bs.*,s.name AS shelf_name FROM box_sets bs LEFT JOIN shelves s ON s.id=bs.shelf_id
+               WHERE bs.id=? AND bs.library_id=?""",
+            (movie["parent_box_set_id"], library_id),
+        ).fetchone()
+        if parent_box_set:
+            parent_whole_loan = db.execute(
+                "SELECT * FROM box_set_loans WHERE box_set_id=? AND returned_date IS NULL ORDER BY id DESC LIMIT 1",
+                (parent_box_set["id"],),
+            ).fetchone()
+    shelf = None
+    if parent_box_set:
+        shelf = {"name": parent_box_set["shelf_name"]} if parent_box_set["shelf_name"] else None
+    elif movie["shelf_id"]:
+        shelf = db.execute("SELECT * FROM shelves WHERE id=?", (movie["shelf_id"],)).fetchone()
     collections = db.execute(
         "SELECT c.* FROM collections c JOIN movie_collections mc ON mc.collection_id=c.id WHERE mc.movie_id=? ORDER BY c.name COLLATE NOCASE",
         (movie_id,),
@@ -488,21 +539,38 @@ def movie_detail(library_id, movie_id, library, role):
     loans = db.execute("SELECT * FROM loans WHERE movie_id=? ORDER BY loaned_date DESC,id DESC", (movie_id,)).fetchall()
     active_loan = next((x for x in loans if not x["returned_date"]), None)
     copies = [movie]
-    if movie["tmdb_id"]:
+    if movie["tmdb_id"] and not movie["parent_box_set_id"]:
         copies = db.execute(
-            "SELECT * FROM movies WHERE library_id=? AND media_type=? AND tmdb_id=? ORDER BY id",
+            "SELECT * FROM movies WHERE library_id=? AND parent_box_set_id IS NULL AND media_type=? AND tmdb_id=? ORDER BY id",
             (library_id, _media_type(movie["media_type"]), movie["tmdb_id"]),
         ).fetchall()
     display_poster = movie["poster_path"] or next((copy["poster_path"] for copy in copies if copy["poster_path"]), None)
-    return render_template("movie_detail.html", library=library, role=role, movie=movie, shelf=shelf, collections=collections, loans=loans, active_loan=active_loan, copies=copies, display_poster=display_poster)
-
+    return render_template(
+        "movie_detail.html", library=library, role=role, movie=movie, shelf=shelf, collections=collections,
+        loans=loans, active_loan=active_loan, copies=copies, display_poster=display_poster,
+        parent_box_set=parent_box_set, parent_whole_loan=parent_whole_loan,
+    )
 
 @bp.route("/libraries/<int:library_id>/movies/<int:movie_id>/edit", methods=["GET", "POST"])
 @login_required
 @require_library_role("editor")
 def movie_edit(library_id, movie_id, library, role):
     db = get_db(); movie = _get_movie(library_id, movie_id)
-    if request.method == "POST":
+    if movie["parent_box_set_id"] and request.method == "POST":
+        title = (request.form.get("title") or "").strip()
+        if not title:
+            flash("Title is required.", "error")
+        else:
+            db.execute(
+                """UPDATE movies SET title=?,year=?,poster_path=?,tmdb_id=?,media_type='movie',notes=?,updated_at=CURRENT_TIMESTAMP
+                   WHERE id=? AND library_id=? AND parent_box_set_id IS NOT NULL""",
+                (title,(request.form.get("year") or "").strip() or None,(request.form.get("poster_path") or "").strip() or None,
+                 _int_or_none(request.form.get("tmdb_id")),(request.form.get("notes") or "").strip() or None,movie_id,library_id),
+            )
+            _sync_collections(db, library_id, movie_id, request.form)
+            db.commit(); flash("Contained movie metadata updated. Physical copy fields still come from the parent box set.", "success")
+            return redirect(url_for("catalog.movie_detail", library_id=library_id, movie_id=movie_id))
+    elif request.method == "POST":
         values = _movie_form_values(request.form)
         if not values["title"]:
             flash("Title is required.", "error")
@@ -547,20 +615,23 @@ def movie_delete(library_id, movie_id, library, role):
 def loans(library_id, library, role):
     q=(request.args.get("q") or "").strip(); needle=f"%{q}%"; db=get_db(); normalized=[]
     params=[library_id]; extra=""
-    if q: extra=" AND (m.title LIKE ? OR l.borrower_name LIKE ? OR l.phone LIKE ?)"; params.extend([needle,needle,needle])
-    for r in db.execute("SELECT l.*,m.title FROM loans l JOIN movies m ON m.id=l.movie_id WHERE l.library_id=? AND l.returned_date IS NULL"+extra,params).fetchall():
-        normalized.append({"loan_kind":"movie","movie_id":r["movie_id"],"title":r["title"],"borrower_name":r["borrower_name"],"loaned_date":r["loaned_date"],"phone":r["phone"],"notes":r["notes"],"detail_endpoint":"catalog.movie_detail","return_endpoint":"catalog.return_movie"})
+    if q:
+        extra=" AND (m.title LIKE ? OR bs.title LIKE ? OR l.borrower_name LIKE ? OR l.phone LIKE ?)"
+        params.extend([needle,needle,needle,needle])
+    for r in db.execute(
+        """SELECT l.*,m.title,m.parent_box_set_id,bs.title AS box_set_title
+           FROM loans l JOIN movies m ON m.id=l.movie_id
+           LEFT JOIN box_sets bs ON bs.id=m.parent_box_set_id
+           WHERE l.library_id=? AND l.returned_date IS NULL"""+extra,params
+    ).fetchall():
+        normalized.append({"loan_kind":"movie","movie_id":r["movie_id"],"title":r["title"],"box_set_title":r["box_set_title"],"parent_box_set_id":r["parent_box_set_id"],"borrower_name":r["borrower_name"],"loaned_date":r["loaned_date"],"phone":r["phone"],"notes":r["notes"],"detail_endpoint":"catalog.movie_detail","return_endpoint":"catalog.return_movie"})
     params=[library_id]; extra=""
-    if q: extra=" AND (bs.title LIKE ? OR bsl.borrower_name LIKE ? OR bsl.phone LIKE ?)"; params.extend([needle,needle,needle])
+    if q:
+        extra=" AND (bs.title LIKE ? OR bsl.borrower_name LIKE ? OR bsl.phone LIKE ?)"; params.extend([needle,needle,needle])
     for r in db.execute("SELECT bsl.*,bs.title FROM box_set_loans bsl JOIN box_sets bs ON bs.id=bsl.box_set_id WHERE bsl.library_id=? AND bsl.returned_date IS NULL"+extra,params).fetchall():
         normalized.append({"loan_kind":"box_set","box_set_id":r["box_set_id"],"title":r["title"],"borrower_name":r["borrower_name"],"loaned_date":r["loaned_date"],"phone":r["phone"],"notes":r["notes"]})
-    params=[library_id]; extra=""
-    if q: extra=" AND (bsm.title LIKE ? OR bs.title LIKE ? OR bml.borrower_name LIKE ? OR bml.phone LIKE ?)"; params.extend([needle,needle,needle,needle])
-    for r in db.execute("SELECT bml.*,bsm.id member_id,bsm.box_set_id,bsm.title,bs.title box_set_title FROM box_set_member_loans bml JOIN box_set_members bsm ON bsm.id=bml.box_set_member_id JOIN box_sets bs ON bs.id=bsm.box_set_id WHERE bml.library_id=? AND bml.returned_date IS NULL"+extra,params).fetchall():
-        normalized.append({"loan_kind":"box_set_member","member_id":r["member_id"],"box_set_id":r["box_set_id"],"title":r["title"],"box_set_title":r["box_set_title"],"borrower_name":r["borrower_name"],"loaned_date":r["loaned_date"],"phone":r["phone"],"notes":r["notes"]})
     normalized.sort(key=lambda x:(x.get("loaned_date") or "",x.get("title") or ""))
     return render_template("loans.html",library=library,role=role,loans=normalized,q=q)
-
 
 @bp.post("/libraries/<int:library_id>/movies/<int:movie_id>/loan")
 @login_required
@@ -575,6 +646,14 @@ def loan_movie(library_id, movie_id, library, role):
         flash("Borrower name is required.", "error")
     else:
         db = get_db()
+        if movie["parent_box_set_id"]:
+            whole = db.execute(
+                "SELECT id FROM box_set_loans WHERE box_set_id=? AND returned_date IS NULL LIMIT 1",
+                (movie["parent_box_set_id"],),
+            ).fetchone()
+            if whole:
+                flash("The whole box set is already on loan, so this contained film cannot be loaned separately.", "warning")
+                return redirect(url_for("catalog.movie_detail", library_id=library_id, movie_id=movie_id))
         existing = db.execute("SELECT id FROM loans WHERE movie_id=? AND returned_date IS NULL", (movie_id,)).fetchone()
         if existing:
             flash("That movie is already on loan.", "warning")
@@ -585,7 +664,6 @@ def loan_movie(library_id, movie_id, library, role):
             )
             db.commit(); flash(f"{movie['title']} loaned to {borrower}.", "success")
     return redirect(url_for("catalog.movie_detail", library_id=library_id, movie_id=movie_id))
-
 
 @bp.post("/libraries/<int:library_id>/movies/<int:movie_id>/return")
 @login_required
@@ -689,11 +767,13 @@ def collection_delete(library_id, collection_id, library, role):
 @login_required
 @require_library_role("viewer")
 def export_csv(library_id, library, role):
-    db = get_db(); output = io.StringIO(); writer = csv.writer(output)
-    headers = ["barcode","title","year","format","poster_path","tmdb_id","media_type","status","version","country","language","region","disc_count","notes","shelf","collections"]
-    writer.writerow(headers)
+    db = get_db(); output = io.StringIO()
+    headers = ["barcode","title","year","format","poster_path","tmdb_id","media_type","status","version","country","language","region","disc_count","notes","shelf","collections","parent_box_set_id","parent_box_set_title","parent_box_set_position"]
+    writer = csv.DictWriter(output, fieldnames=headers); writer.writeheader()
     rows = db.execute(
-        "SELECT m.*,s.name AS shelf_name FROM movies m LEFT JOIN shelves s ON s.id=m.shelf_id WHERE m.library_id=? ORDER BY m.id",
+        """SELECT m.*,s.name AS shelf_name,bs.title AS parent_box_set_title
+           FROM movies m LEFT JOIN shelves s ON s.id=m.shelf_id LEFT JOIN box_sets bs ON bs.id=m.parent_box_set_id
+           WHERE m.library_id=? ORDER BY m.id""",
         (library_id,),
     ).fetchall()
     for m in rows:
@@ -701,7 +781,14 @@ def export_csv(library_id, library, role):
             "SELECT c.name FROM collections c JOIN movie_collections mc ON mc.collection_id=c.id WHERE mc.movie_id=? ORDER BY c.name COLLATE NOCASE",
             (m["id"],),
         ).fetchall()]
-        writer.writerow([m[h] for h in headers[:-2]] + [m["shelf_name"] or "", ";".join(names)])
+        writer.writerow({
+            "barcode":m["barcode"] or "","title":m["title"],"year":m["year"] or "","format":m["format"] or "",
+            "poster_path":m["poster_path"] or "","tmdb_id":m["tmdb_id"] or "","media_type":m["media_type"] or "movie",
+            "status":m["status"] or "owned","version":m["version"] or "","country":m["country"] or "","language":m["language"] or "",
+            "region":m["region"] or "","disc_count":m["disc_count"] or "","notes":m["notes"] or "","shelf":m["shelf_name"] or "",
+            "collections":";".join(names),"parent_box_set_id":m["parent_box_set_id"] or "","parent_box_set_title":m["parent_box_set_title"] or "",
+            "parent_box_set_position":m["parent_box_set_position"] if m["parent_box_set_position"] is not None else "",
+        })
     filename = f"{library['name'].replace(' ','_')}_movies.csv"
     return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
@@ -719,26 +806,52 @@ def import_csv(library_id, library, role):
     except UnicodeDecodeError:
         flash("CSV must be UTF-8 text.", "error")
         return redirect(url_for("catalog.library_home", library_id=library_id))
-    db = get_db(); count = 0
+    db = get_db(); count = 0; skipped_contained = 0
     for row in csv.DictReader(io.StringIO(text)):
         title = (row.get("title") or "").strip()
         if not title: continue
+        parent_box_set_id = None
+        parent_title = (row.get("parent_box_set_title") or "").strip()
+        parent_raw = _int_or_none(row.get("parent_box_set_id"))
+        if parent_title or parent_raw:
+            parent = None
+            if parent_title:
+                parent = db.execute("SELECT id FROM box_sets WHERE library_id=? AND title=? COLLATE NOCASE ORDER BY id LIMIT 1", (library_id,parent_title)).fetchone()
+            if not parent and parent_raw:
+                parent = db.execute("SELECT id FROM box_sets WHERE library_id=? AND id=?", (library_id,parent_raw)).fetchone()
+            if not parent:
+                skipped_contained += 1
+                continue
+            parent_box_set_id = int(parent["id"])
         shelf_id = None
         shelf_name = (row.get("shelf") or "").strip()
-        if shelf_name:
+        if shelf_name and not parent_box_set_id:
             shelf = db.execute("SELECT id FROM shelves WHERE library_id=? AND name=? COLLATE NOCASE", (library_id, shelf_name)).fetchone()
             if not shelf:
                 cur = db.execute("INSERT INTO shelves (library_id,name) VALUES (?,?)", (library_id, shelf_name)); shelf_id = cur.lastrowid
             else: shelf_id = shelf["id"]
-        cur = db.execute(
-            """INSERT INTO movies (library_id,barcode,title,year,format,poster_path,tmdb_id,media_type,status,version,country,language,region,disc_count,notes,shelf_id)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (library_id, row.get("barcode") or None, title, row.get("year") or None, row.get("format") or "Blu-ray",
-             row.get("poster_path") or None, _int_or_none(row.get("tmdb_id")), _media_type(row.get("media_type")), row.get("status") or "owned",
-             row.get("version") or None, row.get("country") or None, row.get("language") or None,
-             row.get("region") or None, _int_or_none(row.get("disc_count")), row.get("notes") or None, shelf_id),
-        )
-        movie_id = cur.lastrowid
+        tmdb_id = _int_or_none(row.get("tmdb_id"))
+        existing = None
+        if parent_box_set_id and tmdb_id:
+            existing = db.execute("SELECT id FROM movies WHERE library_id=? AND parent_box_set_id=? AND tmdb_id=? ORDER BY id LIMIT 1", (library_id,parent_box_set_id,tmdb_id)).fetchone()
+        if existing:
+            movie_id = int(existing["id"])
+            db.execute(
+                """UPDATE movies SET title=?,year=?,poster_path=COALESCE(NULLIF(?,''),poster_path),media_type='movie',parent_box_set_position=?,updated_at=CURRENT_TIMESTAMP WHERE id=?""",
+                (title,row.get("year") or None,row.get("poster_path") or "",_int_or_none(row.get("parent_box_set_position")),movie_id),
+            )
+        else:
+            cur = db.execute(
+                """INSERT INTO movies (library_id,barcode,title,year,format,poster_path,tmdb_id,media_type,status,version,country,language,region,disc_count,notes,shelf_id,parent_box_set_id,parent_box_set_position)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (library_id, None if parent_box_set_id else (row.get("barcode") or None), title, row.get("year") or None,
+                 None if parent_box_set_id else (row.get("format") or "Blu-ray"), row.get("poster_path") or None, tmdb_id,
+                 "movie" if parent_box_set_id else _media_type(row.get("media_type")), row.get("status") or "owned",
+                 None if parent_box_set_id else (row.get("version") or None), row.get("country") or None, row.get("language") or None,
+                 None if parent_box_set_id else (row.get("region") or None), None if parent_box_set_id else _int_or_none(row.get("disc_count")),
+                 row.get("notes") or None, shelf_id, parent_box_set_id, _int_or_none(row.get("parent_box_set_position"))),
+            )
+            movie_id = int(cur.lastrowid)
         for name in [x.strip() for x in (row.get("collections") or "").split(";") if x.strip()]:
             coll = db.execute("SELECT id FROM collections WHERE library_id=? AND name=? COLLATE NOCASE", (library_id, name)).fetchone()
             if not coll:
@@ -746,9 +859,12 @@ def import_csv(library_id, library, role):
             else: cid = coll["id"]
             db.execute("INSERT OR IGNORE INTO movie_collections (movie_id,collection_id) VALUES (?,?)", (movie_id, cid))
         count += 1
-    db.commit(); flash(f"Imported {count} movies.", "success")
+    db.commit()
+    message=f"Imported {count} movies."
+    if skipped_contained:
+        message += f" Skipped {skipped_contained} contained films because their parent box set was not found; import the Box Sets CSV first."
+    flash(message, "success" if count else "warning")
     return redirect(url_for("catalog.library_home", library_id=library_id))
-
 
 
 @bp.get("/libraries/<int:library_id>/match-repair")
@@ -760,7 +876,7 @@ def match_repair_page(library_id, library, role):
         return redirect(url_for("catalog.library_home", library_id=library_id))
     db = get_db()
     unresolved_total = db.execute(
-        "SELECT COUNT(*) AS n FROM movies WHERE library_id=? AND (tmdb_id IS NULL OR review_pending=1)",
+        "SELECT COUNT(*) AS n FROM movies WHERE library_id=? AND parent_box_set_id IS NULL AND parent_box_set_id IS NULL AND (tmdb_id IS NULL OR review_pending=1)",
         (library_id,),
     ).fetchone()["n"]
     library_total = db.execute(
@@ -788,12 +904,12 @@ def match_repair_batch(library_id, library, role):
     db = get_db()
     if refresh_matched:
         rows = db.execute(
-            "SELECT * FROM movies WHERE library_id=? AND id>? ORDER BY id LIMIT ?",
+            "SELECT * FROM movies WHERE library_id=? AND parent_box_set_id IS NULL AND id>? ORDER BY id LIMIT ?",
             (library_id, after_id, BULK_REPAIR_BATCH_SIZE),
         ).fetchall()
     else:
         rows = db.execute(
-            "SELECT * FROM movies WHERE library_id=? AND id>? AND (tmdb_id IS NULL OR review_pending=1) ORDER BY id LIMIT ?",
+            "SELECT * FROM movies WHERE library_id=? AND parent_box_set_id IS NULL AND id>? AND (tmdb_id IS NULL OR review_pending=1) ORDER BY id LIMIT ?",
             (library_id, after_id, BULK_REPAIR_BATCH_SIZE),
         ).fetchall()
     counts = {"processed": 0, "matched": 0, "refreshed": 0, "metadata": 0, "unmatched": 0, "failed": 0}
@@ -843,11 +959,11 @@ def match_repair_batch(library_id, library, role):
     next_after_id = rows[-1]["id"] if rows else after_id
     if refresh_matched:
         more = db.execute(
-            "SELECT 1 FROM movies WHERE library_id=? AND id>? LIMIT 1", (library_id, next_after_id)
+            "SELECT 1 FROM movies WHERE library_id=? AND parent_box_set_id IS NULL AND id>? LIMIT 1", (library_id, next_after_id)
         ).fetchone() is not None
     else:
         more = db.execute(
-            "SELECT 1 FROM movies WHERE library_id=? AND id>? AND (tmdb_id IS NULL OR review_pending=1) LIMIT 1",
+            "SELECT 1 FROM movies WHERE library_id=? AND parent_box_set_id IS NULL AND id>? AND (tmdb_id IS NULL OR review_pending=1) LIMIT 1",
             (library_id, next_after_id),
         ).fetchone() is not None
     return jsonify({**counts, "after_id": next_after_id, "done": not more})
@@ -878,9 +994,30 @@ def match_repair_review(library_id, library, role):
             return redirect(url_for("catalog.match_repair_review", library_id=library_id, after_id=movie_id))
 
         tmdb_id = _int_or_none(request.form.get("tmdb_id"))
-        media_type = _media_type(request.form.get("media_type") or (movie["media_type"] if "media_type" in movie.keys() else "movie"))
+        identify_type = _identify_type(request.form.get("media_type") or (movie["media_type"] if "media_type" in movie.keys() else "movie"))
         if not tmdb_id:
             abort(400)
+        if identify_type == "collection":
+            if movie["parent_box_set_id"]:
+                flash("A film already contained in a box set cannot itself be converted into another box set.", "warning")
+                return redirect(url_for("catalog.identify_movie", library_id=library_id, movie_id=movie_id))
+            try:
+                details = tmdb_collection_details(tmdb_id)
+            except requests.RequestException:
+                details = None
+            if not details:
+                flash("TMDb Collection lookup failed. Try again later.", "error")
+                return redirect(url_for("catalog.match_repair_review", library_id=library_id, after_id=max(0, movie_id-1), media_type="collection"))
+            try:
+                _convert_identified_movie_to_collection(db, movie, details)
+            except Exception as exc:
+                current_app.logger.exception("Review collection conversion failed")
+                flash(f"Could not convert this title into a box set: {exc}", "error")
+                return redirect(url_for("catalog.match_repair_review", library_id=library_id, after_id=max(0, movie_id-1), media_type="collection"))
+            flash(f"Matched {movie['title']} as the {details.get('title') or 'TMDb Collection'} box set.", "success")
+            return redirect(url_for("catalog.match_repair_review", library_id=library_id, after_id=movie_id))
+
+        media_type = _media_type(identify_type)
         try:
             data = _tmdb_details(tmdb_id, media_type=media_type)
         except requests.RequestException:
@@ -903,11 +1040,11 @@ def match_repair_review(library_id, library, role):
         after_id = 0
 
     remaining_review = db.execute(
-        "SELECT COUNT(*) AS n FROM movies WHERE library_id=? AND review_pending=1",
+        "SELECT COUNT(*) AS n FROM movies WHERE library_id=? AND review_pending=1 AND parent_box_set_id IS NULL",
         (library_id,),
     ).fetchone()["n"]
     movie = db.execute(
-        "SELECT * FROM movies WHERE library_id=? AND review_pending=1 AND id>? ORDER BY id LIMIT 1",
+        "SELECT * FROM movies WHERE library_id=? AND review_pending=1 AND parent_box_set_id IS NULL AND id>? ORDER BY id LIMIT 1",
         (library_id, after_id),
     ).fetchone()
 
@@ -915,33 +1052,39 @@ def match_repair_review(library_id, library, role):
         return render_template(
             "match_repair_review.html",
             library=library, role=role, movie=None, results=[], poster_size=current_app.config.get("TMDB_POSTER_SIZE", "w342"),
-            remaining_review=remaining_review, after_id=after_id, search_title="",
+            remaining_review=remaining_review, after_id=after_id, search_title="", media_type="movie",
         )
 
     search_title = (request.args.get("search_title") or "").strip()
-    media_type = _media_type(request.args.get("media_type") or (movie["media_type"] if "media_type" in movie.keys() else "movie"))
+    identify_type = _identify_type(request.args.get("media_type") or (movie["media_type"] if "media_type" in movie.keys() else "movie"))
     if search_title:
-        query_titles = search_ready_title_candidates(search_title, media_type=media_type)
-        if search_title not in query_titles:
-            query_titles.insert(0, search_title)
+        if identify_type == "collection":
+            query_titles = movie_box_set_title_candidates(search_title) or [search_title]
+        else:
+            query_titles = search_ready_title_candidates(search_title, media_type=identify_type)
+            if search_title not in query_titles:
+                query_titles.insert(0, search_title)
         query_year = None
     else:
-        query_titles, query_year = _match_queries_for_movie(movie)
+        query_titles, query_year = _match_queries_for_movie(movie, media_type=identify_type)
     try:
-        results = _tmdb_search_candidates(query_titles, query_year, max_searches=MAX_MATCH_SEARCHES, media_type=media_type)
+        if identify_type == "collection":
+            results = _tmdb_collection_search_candidates(query_titles)
+        else:
+            results = _tmdb_search_candidates(query_titles, query_year, max_searches=MAX_MATCH_SEARCHES, media_type=identify_type)
     except requests.RequestException:
         results = []
-        flash("TMDb search failed for this movie. You can skip it and continue.", "error")
-    for result in results:
-        result["metadata_preview"] = infer_copy_metadata_from_legacy_title(
-            movie["title"], result.get("title") or movie["title"], media_type=media_type
-        )
+        flash("TMDb search failed for this title. You can skip it and continue.", "error")
+    if identify_type != "collection":
+        for result in results:
+            result["metadata_preview"] = infer_copy_metadata_from_legacy_title(
+                movie["title"], result.get("title") or movie["title"], media_type=identify_type
+            )
     return render_template(
         "match_repair_review.html",
         library=library, role=role, movie=movie, results=results, poster_size=current_app.config.get("TMDB_POSTER_SIZE", "w342"),
-        remaining_review=remaining_review, after_id=after_id, search_title=search_title, media_type=media_type,
+        remaining_review=remaining_review, after_id=after_id, search_title=search_title, media_type=identify_type,
     )
-
 
 def _normalize_tmdb_payload(item, media_type="movie"):
     media_type = _media_type(media_type)
@@ -994,6 +1137,54 @@ def _tmdb_poster_url(poster_path: str | None) -> str | None:
     return f"https://image.tmdb.org/t/p/{size}{poster_path}"
 
 
+def _tmdb_collection_search_candidates(query_titles, max_searches=MAX_MATCH_SEARCHES):
+    merged = []
+    seen = set()
+    for title in (query_titles or [])[:max_searches]:
+        for item in tmdb_collection_search(title):
+            key = item.get("id")
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(item)
+    return merged
+
+
+def _collection_members_from_details(details):
+    members = []
+    for position, part in enumerate(details.get("parts") or []):
+        release = part.get("release_date") or ""
+        members.append({
+            "tmdb_id": part.get("id"),
+            "title": part.get("title") or "Untitled",
+            "year": release[:4] if len(release) >= 4 and release[:4].isdigit() else None,
+            "poster_path": _tmdb_poster_url(part.get("poster_path")),
+            "position": int(part.get("position", position)),
+        })
+    return members
+
+
+def _convert_identified_movie_to_collection(db, movie, details):
+    parsed = parse_barcode_product_title(movie["title"] or "")
+    physical = {
+        "barcode": movie["barcode"],
+        "title": details.get("title") or movie["title"],
+        "tmdb_collection_id": details.get("id"),
+        "poster_path": _tmdb_poster_url(details.get("poster_path")) or movie["poster_path"],
+        "format": movie["format"] or parsed.format,
+        "version": movie["version"] or parsed.edition,
+        "country": movie["country"],
+        "language": movie["language"] or parsed.language,
+        "region": movie["region"] or parsed.region,
+        "disc_count": movie["disc_count"] or parsed.disc_count,
+        "notes": movie["notes"],
+        "shelf_id": movie["shelf_id"],
+        "status": movie["status"] or "owned",
+    }
+    members = _collection_members_from_details(details)
+    return convert_movie_to_box_set(db, movie, physical, members)
+
+
 @bp.route("/libraries/<int:library_id>/movies/<int:movie_id>/identify", methods=["GET", "POST"])
 @login_required
 @require_library_role("editor")
@@ -1003,10 +1194,30 @@ def identify_movie(library_id, movie_id, library, role):
     if not api_key:
         flash("TMDB_API_KEY is not configured.", "warning")
         return redirect(url_for("catalog.movie_detail", library_id=library_id, movie_id=movie_id))
+
     if request.method == "POST":
         tmdb_id = _int_or_none(request.form.get("tmdb_id"))
-        media_type = _media_type(request.form.get("media_type") or (movie["media_type"] if "media_type" in movie.keys() else "movie"))
-        if not tmdb_id: abort(400)
+        identify_type = _identify_type(request.form.get("media_type") or (movie["media_type"] if "media_type" in movie.keys() else "movie"))
+        if not tmdb_id:
+            abort(400)
+        if identify_type == "collection":
+            try:
+                details = tmdb_collection_details(tmdb_id)
+            except requests.RequestException:
+                details = None
+            if not details:
+                flash("TMDb Collection lookup failed. Try again later.", "error")
+                return redirect(url_for("catalog.identify_movie", library_id=library_id, movie_id=movie_id, media_type="collection"))
+            try:
+                box_id = _convert_identified_movie_to_collection(db, movie, details)
+            except Exception as exc:
+                current_app.logger.exception("Collection conversion failed")
+                flash(f"Could not convert this title into a box set: {exc}", "error")
+                return redirect(url_for("catalog.identify_movie", library_id=library_id, movie_id=movie_id, media_type="collection"))
+            flash(f"Identified as {details.get('title') or 'TMDb Collection'} and added its contained films.", "success")
+            return redirect(url_for("box_sets.detail", library_id=library_id, box_set_id=box_id))
+
+        media_type = _media_type(identify_type)
         try:
             data = _tmdb_details(tmdb_id, media_type=media_type)
         except requests.RequestException:
@@ -1017,20 +1228,32 @@ def identify_movie(library_id, movie_id, library, role):
             return redirect(url_for("catalog.movie_detail", library_id=library_id, movie_id=movie_id))
         metadata_changed, _ = _apply_identified_movie(db, movie, data, tmdb_id, media_type=media_type)
         db.commit()
-        message = "Movie identified with TMDb."
+        message = "Title identified with TMDb."
         if metadata_changed:
             message += " Copy metadata was recovered from the old title."
         flash(message, "success")
         return redirect(url_for("catalog.movie_detail", library_id=library_id, movie_id=movie_id))
-    media_type = _media_type(request.args.get("media_type") or (movie["media_type"] if "media_type" in movie.keys() else "movie"))
-    query_titles, query_year = _match_queries_for_movie(movie, media_type=media_type)
+
+    identify_type = _identify_type(request.args.get("media_type") or (movie["media_type"] if "media_type" in movie.keys() else "movie"))
+    if movie["parent_box_set_id"] and identify_type == "collection":
+        identify_type = "movie"
+    query_titles, query_year = _match_queries_for_movie(movie, media_type=identify_type)
     try:
-        results = _tmdb_search_candidates(query_titles, query_year, media_type=media_type)
+        if identify_type == "collection":
+            results = _tmdb_collection_search_candidates(query_titles)
+        else:
+            results = _tmdb_search_candidates(query_titles, query_year, media_type=identify_type)
     except requests.RequestException:
-        results = []; flash("TMDb search failed. Try again later.", "error")
-    for result in results:
-        result["metadata_preview"] = infer_copy_metadata_from_legacy_title(
-            movie["title"], result.get("title") or movie["title"], media_type=media_type
-        )
+        results = []
+        flash("TMDb search failed. Try again later.", "error")
+    if identify_type != "collection":
+        for result in results:
+            result["metadata_preview"] = infer_copy_metadata_from_legacy_title(
+                movie["title"], result.get("title") or movie["title"], media_type=identify_type
+            )
     poster_size = current_app.config.get("TMDB_POSTER_SIZE", "w342")
-    return render_template("identify.html", library=library, role=role, movie=movie, results=results, poster_size=poster_size, media_type=media_type)
+    return render_template(
+        "identify.html", library=library, role=role, movie=movie, results=results,
+        poster_size=poster_size, media_type=identify_type,
+    )
+

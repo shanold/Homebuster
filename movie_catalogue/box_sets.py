@@ -209,9 +209,9 @@ def add_member(library_id, box_set_id, library, role):
         if not title:
             flash("Contained film title is required.","error")
         else:
-            pos=db.execute("SELECT COALESCE(MAX(position),-1)+1 FROM box_set_members WHERE box_set_id=?",(box_set_id,)).fetchone()[0]
+            pos=db.execute("SELECT COALESCE(MAX(parent_box_set_position),-1)+1 FROM movies WHERE parent_box_set_id=?",(box_set_id,)).fetchone()[0]
             try:
-                db.execute("INSERT INTO box_set_members(box_set_id,tmdb_id,title,year,poster_path,position) VALUES (?,?,?,?,?,?)",(box_set_id,tmdb_id,title,year,_poster_url(poster),pos)); db.commit(); flash("Contained film added.","success")
+                db.execute("INSERT INTO movies(library_id,title,year,poster_path,tmdb_id,media_type,status,review_pending,parent_box_set_id,parent_box_set_position) VALUES (?,?,?,?,?,'movie','owned',0,?,?)",(library_id,title,year,_poster_url(poster),tmdb_id,box_set_id,pos)); db.commit(); flash("Contained film added.","success")
             except Exception:
                 db.rollback(); flash("That film is already in this box set.","warning")
     elif query:
@@ -232,12 +232,12 @@ def add_member(library_id, box_set_id, library, role):
 def remove_member(library_id, box_set_id, member_id, library, role):
     db=get_db(); box=get_box_set(db,library_id,box_set_id)
     if not box: abort(404)
-    member=db.execute("SELECT * FROM box_set_members WHERE id=? AND box_set_id=?",(member_id,box_set_id)).fetchone()
+    member=db.execute("SELECT * FROM movies WHERE id=? AND parent_box_set_id=? AND library_id=?",(member_id,box_set_id,library_id)).fetchone()
     if not member: abort(404)
-    if db.execute("SELECT 1 FROM box_set_member_loans WHERE box_set_member_id=? LIMIT 1",(member_id,)).fetchone():
+    if db.execute("SELECT 1 FROM loans WHERE movie_id=? LIMIT 1",(member_id,)).fetchone():
         flash("This contained film has loan history and cannot be removed in this release.","warning")
     else:
-        db.execute("DELETE FROM box_set_members WHERE id=?",(member_id,)); db.commit(); flash("Contained film removed.","success")
+        db.execute("DELETE FROM movies WHERE id=? AND parent_box_set_id=?",(member_id,box_set_id)); db.commit(); flash("Contained film removed.","success")
     return redirect(url_for("box_sets.detail",library_id=library_id,box_set_id=box_set_id))
 
 
@@ -247,7 +247,7 @@ def remove_member(library_id, box_set_id, member_id, library, role):
 def reorder_members(library_id, box_set_id, library, role):
     db=get_db(); box=get_box_set(db,library_id,box_set_id)
     if not box: abort(404)
-    valid={r[0] for r in db.execute("SELECT id FROM box_set_members WHERE box_set_id=?",(box_set_id,)).fetchall()}
+    valid={r[0] for r in db.execute("SELECT id FROM movies WHERE parent_box_set_id=?",(box_set_id,)).fetchall()}
     ranked=[]
     for mid in valid:
         raw=request.form.get(f"position_{mid}")
@@ -255,7 +255,7 @@ def reorder_members(library_id, box_set_id, library, role):
         except (TypeError,ValueError): position=999999
         ranked.append((position,mid))
     ranked.sort(key=lambda item:(item[0],item[1]))
-    for position,(_requested,mid) in enumerate(ranked): db.execute("UPDATE box_set_members SET position=? WHERE id=?",(position,mid))
+    for position,(_requested,mid) in enumerate(ranked): db.execute("UPDATE movies SET parent_box_set_position=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND parent_box_set_id=?",(position,mid,box_set_id))
     db.commit(); flash("Film order updated.","success")
     return redirect(url_for("box_sets.detail",library_id=library_id,box_set_id=box_set_id))
 
@@ -271,6 +271,9 @@ def delete(library_id, box_set_id, library, role):
     elif box_set_has_loan_history(db,box_set_id):
         flash("This box set has loan history and cannot be deleted in this release.","warning")
     else:
+        # Existing v0.3.27 databases gain parent_box_set_id via ALTER TABLE, which cannot
+        # add the new FK cascade. Delete promoted children explicitly before the parent.
+        db.execute("DELETE FROM movies WHERE parent_box_set_id=? AND library_id=?",(box_set_id,library_id))
         db.execute("DELETE FROM box_sets WHERE id=? AND library_id=?",(box_set_id,library_id)); db.commit(); flash("Box set deleted.","success")
         return redirect(url_for("catalog.library_home",library_id=library_id))
     return redirect(url_for("box_sets.detail",library_id=library_id,box_set_id=box_set_id))
@@ -322,7 +325,7 @@ CSV_HEADERS=["box_set_key","barcode","title","tmdb_collection_id","poster_path",
 @require_library_role("viewer")
 def export_csv(library_id,library,role):
     db=get_db(); output=io.StringIO(); w=csv.DictWriter(output,fieldnames=CSV_HEADERS); w.writeheader()
-    rows=db.execute("""SELECT bs.*,s.name shelf_name,bsm.tmdb_id member_tmdb_id,bsm.title member_title,bsm.year member_year,bsm.poster_path member_poster_path,bsm.position member_position FROM box_sets bs LEFT JOIN shelves s ON s.id=bs.shelf_id LEFT JOIN box_set_members bsm ON bsm.box_set_id=bs.id WHERE bs.library_id=? ORDER BY bs.id,bsm.position,bsm.id""",(library_id,)).fetchall()
+    rows=db.execute("""SELECT bs.*,s.name shelf_name,m.tmdb_id member_tmdb_id,m.title member_title,m.year member_year,m.poster_path member_poster_path,m.parent_box_set_position member_position FROM box_sets bs LEFT JOIN shelves s ON s.id=bs.shelf_id LEFT JOIN movies m ON m.parent_box_set_id=bs.id WHERE bs.library_id=? ORDER BY bs.id,COALESCE(m.parent_box_set_position,999999),m.id""",(library_id,)).fetchall()
     for r in rows:
         d=dict(r); w.writerow({"box_set_key":str(r["id"]),"barcode":r["barcode"],"title":r["title"],"tmdb_collection_id":r["tmdb_collection_id"],"poster_path":r["poster_path"],"format":r["format"],"version":r["version"],"country":r["country"],"language":r["language"],"region":r["region"],"disc_count":r["disc_count"],"notes":r["notes"],"shelf":d.get("shelf_name"),"member_tmdb_id":d.get("member_tmdb_id"),"member_title":d.get("member_title"),"member_year":d.get("member_year"),"member_poster_path":d.get("member_poster_path"),"member_position":d.get("member_position")})
     return Response(output.getvalue(),mimetype="text/csv",headers={"Content-Disposition":f"attachment; filename=homebuster-box-sets-{library_id}.csv"})

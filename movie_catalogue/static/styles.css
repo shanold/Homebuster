@@ -550,34 +550,62 @@
 }
 
 
-/* v0.3.47: anchor branding to the browser viewport, independent of content/grid width. */
-.topbar>.brand{
-  position:absolute;
-  left:20px;
-  top:0;
-  grid-column:auto;
-  grid-row:auto;
-  width:auto;
-  min-width:0;
-  height:40px;
-  margin:12px 0;
-  padding:0;
-  justify-content:flex-start;
-}
-.topbar>.desktop-nav{
-  grid-column:4 / span 4;
-}
-.topbar>.desktop-nav:not(:has(>:nth-child(4))){
-  grid-column:4 / span 3;
-}
-@media(max-width:760px){
+/* v0.3.47: viewport-anchored branding + screen-centered film-cell navigation */
+@media(min-width:761px){
+  .topbar{
+    position:sticky;
+    display:block;
+    height:64px;
+    min-height:64px;
+    --film-cell:112px;
+  }
   .topbar>.brand{
-    position:relative;
-    left:auto;
-    top:auto;
+    position:absolute;
+    left:20px;
+    top:12px;
     width:auto;
-    height:42px;
+    min-width:0;
+    height:40px;
     margin:0;
     padding:0;
+    display:flex;
+    align-items:center;
+    justify-content:flex-start;
+    z-index:4;
+  }
+  .topbar>.desktop-nav,
+  .topbar>.desktop-nav:not(:has(>:nth-child(4))){
+    position:absolute;
+    left:50%;
+    top:0;
+    transform:translateX(-50%);
+    height:64px;
+    margin:0;
+    display:grid;
+    grid-template-columns:repeat(4,var(--film-cell));
+    gap:0;
+    z-index:3;
+  }
+  .topbar>.desktop-nav:not(:has(>:nth-child(4))){
+    grid-template-columns:repeat(3,var(--film-cell));
+  }
+  .topbar>.desktop-nav>*{
+    width:var(--film-cell);
+    min-width:var(--film-cell);
+    height:40px;
+    min-height:40px;
+    margin:12px 0;
+    padding:0 8px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+  }
+  .topbar::before{
+    left:0;
+    right:0;
+    width:auto;
+    transform:none;
+    background-position-x:0;
   }
 }

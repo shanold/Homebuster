@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from .smart_collections import sync_physical_box_set_collection
+from .smart_collections import ensure_organizational_collection_for_box_set
 
 
 PHYSICAL_FIELDS = (
@@ -113,8 +113,8 @@ def create_box_set(db, library_id: int, physical: dict, members: list[dict]) -> 
         with db:
             box_id = _insert_box_set(db, library_id, physical)
             member_ids = reconcile_box_set_members(db, library_id, box_id, members)
-            if "sync_physical_box_set_collection" in globals():
-                sync_physical_box_set_collection(db, library_id, physical.get("tmdb_collection_id"), physical.get("title"), member_ids)
+            if physical.get("tmdb_collection_id"):
+                ensure_organizational_collection_for_box_set(db, library_id, int(physical["tmdb_collection_id"]), str(physical.get("title") or "Movie Collection"), member_ids)
         return box_id
     except Exception:
         db.rollback()
@@ -131,8 +131,8 @@ def convert_movie_to_box_set(db, movie, physical: dict, members: list[dict]) -> 
         with db:
             box_id = _insert_box_set(db, library_id, physical)
             member_ids = reconcile_box_set_members(db, library_id, box_id, members)
-            if "sync_physical_box_set_collection" in globals():
-                sync_physical_box_set_collection(db, library_id, physical.get("tmdb_collection_id"), physical.get("title"), member_ids)
+            if physical.get("tmdb_collection_id"):
+                ensure_organizational_collection_for_box_set(db, library_id, int(physical["tmdb_collection_id"]), str(physical.get("title") or "Movie Collection"), member_ids)
             for loan in db.execute("SELECT * FROM loans WHERE movie_id=? ORDER BY id", (movie_id,)).fetchall():
                 db.execute(
                     """INSERT INTO box_set_loans(

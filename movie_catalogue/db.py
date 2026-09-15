@@ -157,24 +157,18 @@ def _create_catalog_tables(db: sqlite3.Connection) -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_collections_library_name ON collections(library_id, name COLLATE NOCASE);
         CREATE TABLE IF NOT EXISTS tmdb_movie_collection_cache (
-            tmdb_movie_id INTEGER PRIMARY KEY,
-            tmdb_collection_id INTEGER,
-            tmdb_collection_name TEXT,
-            checked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            tmdb_movie_id INTEGER PRIMARY KEY, tmdb_collection_id INTEGER, tmdb_collection_name TEXT, checked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         CREATE INDEX IF NOT EXISTS idx_tmdb_movie_collection_cache_collection ON tmdb_movie_collection_cache(tmdb_collection_id);
-        CREATE TABLE IF NOT EXISTS tmdb_collection_cache (
-            tmdb_collection_id INTEGER PRIMARY KEY,
-            tmdb_collection_name TEXT NOT NULL,
-            released_count INTEGER NOT NULL DEFAULT 0,
-            checked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        CREATE TABLE IF NOT EXISTS smart_collection_parts (
+            tmdb_collection_id INTEGER NOT NULL, tmdb_movie_id INTEGER NOT NULL, title TEXT, release_date TEXT, PRIMARY KEY(tmdb_collection_id, tmdb_movie_id)
         );
         CREATE TABLE IF NOT EXISTS smart_collection_dismissals (
-            library_id INTEGER NOT NULL,
-            tmdb_collection_id INTEGER NOT NULL,
-            dismissed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY(library_id, tmdb_collection_id),
-            FOREIGN KEY(library_id) REFERENCES libraries(id) ON DELETE CASCADE
+            library_id INTEGER NOT NULL, tmdb_collection_id INTEGER NOT NULL, dismissed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY(library_id, tmdb_collection_id), FOREIGN KEY(library_id) REFERENCES libraries(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS smart_collection_refresh_state (
+            tmdb_collection_id INTEGER PRIMARY KEY, refreshed_at TEXT NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS movie_collections (
@@ -302,12 +296,9 @@ def _ensure_catalog_columns(db: sqlite3.Connection) -> None:
     if library_cols and "smart_collections_enabled" not in library_cols:
         db.execute("ALTER TABLE libraries ADD COLUMN smart_collections_enabled INTEGER NOT NULL DEFAULT 1")
     collection_cols = table_columns(db, "collections")
-    if collection_cols and "tmdb_collection_id" not in collection_cols:
-        db.execute("ALTER TABLE collections ADD COLUMN tmdb_collection_id INTEGER")
-    if collection_cols and "tmdb_collection_name" not in collection_cols:
-        db.execute("ALTER TABLE collections ADD COLUMN tmdb_collection_name TEXT")
-    if collection_cols and "tmdb_last_refreshed_at" not in collection_cols:
-        db.execute("ALTER TABLE collections ADD COLUMN tmdb_last_refreshed_at TEXT")
+    for col, decl in (("tmdb_collection_id", "INTEGER"), ("tmdb_collection_name", "TEXT"), ("tmdb_last_refreshed_at", "TEXT")):
+        if collection_cols and col not in collection_cols:
+            db.execute(f"ALTER TABLE collections ADD COLUMN {col} {decl}")
     if table_exists(db, "collections"):
         db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_collections_library_tmdb_unique ON collections(library_id, tmdb_collection_id) WHERE tmdb_collection_id IS NOT NULL")
 

@@ -526,40 +526,25 @@
   }
 }
 
-
-/* v0.3.46: keep primary desktop actions beside the brand; pin signed-in user to
-   the farthest-right complete film cell. Strengthen the subtle yellow wordmark edge. */
-@media(min-width:761px){
-  .topbar>.desktop-nav{
-    grid-column:4 / span 3;
-    grid-template-columns:repeat(3,var(--film-cell));
-  }
-  .topbar>.desktop-nav:not(:has(>:nth-child(4))){
-    grid-column:4 / span 2;
-    grid-template-columns:repeat(2,var(--film-cell));
-  }
-  .topbar>.desktop-nav>.desktop-user-cell{
-    position:absolute;
-    right:0;
-    top:0;
-    width:var(--film-cell);
-    min-width:var(--film-cell);
-    height:40px;
-    margin:12px 0;
-    padding:0 8px;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    text-align:center;
+/* v0.3.46 branded HOMEBUSTER wordmark */
+.topbar .brand-wordmark-image{
+  display:block;
+  width:auto;
+  height:38px;
+  max-width:225px;
+  object-fit:contain;
+  object-position:left center;
+  flex:0 1 auto;
+}
+@media(max-width:760px){
+  .topbar .brand-wordmark-image{
+    height:34px;
+    max-width:min(210px,calc(100vw - 125px));
   }
 }
-.topbar .brand-wordmark{
-  text-shadow:
-    -1px 0 #ffdf62,
-    1px 0 #ffdf62,
-    0 -1px #ffdf62,
-    0 1px #ffdf62,
-    0 2px 0 #3b1457,
-    0 0 4px rgba(255,223,98,.72),
-    0 0 10px rgba(181,108,255,.24);
+@media(max-width:390px){
+  .topbar .brand-wordmark-image{
+    height:30px;
+    max-width:190px;
+  }
 }

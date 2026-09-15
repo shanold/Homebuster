@@ -437,6 +437,107 @@ def add_movie():
     return jsonify({"movie": _movie_row(row, db)}), 201
 
 
+
+@bp.patch("/movies/<int:movie_id>")
+@token_required
+def update_movie_api(movie_id):
+    data = request.get_json(silent=True) or {}
+    db = get_db()
+    row = db.execute("SELECT * FROM movies WHERE id=?", (movie_id,)).fetchone()
+    if not row:
+        return _json_error("Movie not found", 404)
+    library, role = _library_role(db, row["library_id"], g.api_user["id"])
+    if not library or ROLE_LEVEL[role] < ROLE_LEVEL["editor"]:
+        return _json_error("Library is not editable", 403)
+    allowed = {"title","year","format","version","language","region","disc_count","notes","shelf_id"}
+    fields=[]; values=[]
+    for key in allowed:
+        if key in data:
+            value=data[key]
+            if key == "title":
+                value=str(value or "").strip()
+                if not value: return _json_error("Title is required")
+            if key == "shelf_id" and value not in (None,""):
+                try: value=int(value)
+                except (TypeError,ValueError): return _json_error("Invalid shelf_id")
+                shelf=db.execute("SELECT id FROM shelves WHERE id=? AND library_id=?", (value,row["library_id"])).fetchone()
+                if not shelf: return _json_error("Shelf not found",404)
+            if key == "disc_count" and value not in (None,""):
+                try: value=int(value)
+                except (TypeError,ValueError): return _json_error("Invalid disc_count")
+            if value == "": value=None
+            fields.append(f"{key}=?"); values.append(value)
+    if fields:
+        values.extend([movie_id])
+        db.execute(f"UPDATE movies SET {','.join(fields)},updated_at=CURRENT_TIMESTAMP WHERE id=?", values)
+        db.commit()
+    updated=db.execute("SELECT * FROM movies WHERE id=?", (movie_id,)).fetchone()
+    return jsonify({"movie":_movie_row(updated,db)})
+
+@bp.delete("/movies/<int:movie_id>")
+@token_required
+def delete_movie_api(movie_id):
+    db=get_db(); row=db.execute("SELECT * FROM movies WHERE id=?",(movie_id,)).fetchone()
+    if not row: return _json_error("Movie not found",404)
+    library,role=_library_role(db,row["library_id"],g.api_user["id"])
+    if not library or ROLE_LEVEL[role] < ROLE_LEVEL["editor"]: return _json_error("Library is not editable",403)
+    db.execute("DELETE FROM movies WHERE id=?",(movie_id,)); db.commit()
+    return jsonify({"ok":True})
+
+@bp.post("/movies/<int:movie_id>/loan")
+@token_required
+def loan_movie_api(movie_id):
+    data=request.get_json(silent=True) or {}; borrower=str(data.get("borrower") or "").strip()
+    if not borrower: return _json_error("Borrower name is required")
+    db=get_db(); row=db.execute("SELECT * FROM movies WHERE id=?",(movie_id,)).fetchone()
+    if not row: return _json_error("Movie not found",404)
+    library,role=_library_role(db,row["library_id"],g.api_user["id"])
+    if not library or ROLE_LEVEL[role] < ROLE_LEVEL["editor"]: return _json_error("Library is not editable",403)
+    active=db.execute("SELECT id FROM loans WHERE movie_id=? AND returned_date IS NULL",(movie_id,)).fetchone()
+    if active: return _json_error("Media is already on loan",409)
+    db.execute("INSERT INTO loans(library_id,movie_id,borrower_name,phone,loaned_date,notes) VALUES(?,?,?,?,date('now'),?)",
+               (row["library_id"],movie_id,borrower,str(data.get("phone") or "").strip() or None,str(data.get("notes") or "").strip() or None))
+    db.execute("UPDATE movies SET status='loaned',updated_at=CURRENT_TIMESTAMP WHERE id=?",(movie_id,)); db.commit()
+    return jsonify({"ok":True}),201
+
+@bp.post("/movies/<int:movie_id>/return")
+@token_required
+def return_movie_api(movie_id):
+    db=get_db(); row=db.execute("SELECT * FROM movies WHERE id=?",(movie_id,)).fetchone()
+    if not row: return _json_error("Movie not found",404)
+    library,role=_library_role(db,row["library_id"],g.api_user["id"])
+    if not library or ROLE_LEVEL[role] < ROLE_LEVEL["editor"]: return _json_error("Library is not editable",403)
+    db.execute("UPDATE loans SET returned_date=date('now') WHERE movie_id=? AND returned_date IS NULL",(movie_id,))
+    db.execute("UPDATE movies SET status='owned',updated_at=CURRENT_TIMESTAMP WHERE id=?",(movie_id,)); db.commit()
+    return jsonify({"ok":True})
+
+@bp.post("/collections")
+@token_required
+def create_collection_api():
+    data=request.get_json(silent=True) or {}; name=str(data.get("name") or "").strip()
+    try: library_id=int(data.get("library_id"))
+    except (TypeError,ValueError): return _json_error("Invalid library_id")
+    if not name: return _json_error("Collection name is required")
+    db=get_db(); library,role=_library_role(db,library_id,g.api_user["id"])
+    if not library or ROLE_LEVEL[role] < ROLE_LEVEL["editor"]: return _json_error("Library is not editable",403)
+    try:
+        cur=db.execute("INSERT INTO collections(library_id,name) VALUES(?,?)",(library_id,name)); db.commit()
+    except Exception as exc:
+        if "UNIQUE" in str(exc).upper(): return _json_error("Collection already exists",409)
+        raise
+    return jsonify({"collection":{"id":cur.lastrowid,"library_id":library_id,"name":name}}),201
+
+@bp.delete("/collections/<int:collection_id>")
+@token_required
+def delete_collection_api(collection_id):
+    db=get_db(); row=db.execute("SELECT * FROM collections WHERE id=?",(collection_id,)).fetchone()
+    if not row: return _json_error("Collection not found",404)
+    library,role=_library_role(db,row["library_id"],g.api_user["id"])
+    if not library or ROLE_LEVEL[role] < ROLE_LEVEL["editor"]: return _json_error("Library is not editable",403)
+    db.execute("DELETE FROM collections WHERE id=?",(collection_id,)); db.commit()
+    return jsonify({"ok":True})
+
+
 @bp.get("/loans")
 @token_required
 def loans():

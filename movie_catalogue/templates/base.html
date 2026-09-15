@@ -11,10 +11,22 @@
 <header class="topbar">
   <a class="brand" href="{{ url_for('libraries.index') if current_user.is_authenticated else url_for('auth.login') }}"><img class="brand-icon" src="{{ url_for('static', filename='favicon.png') }}" alt=""><span class="brand-wordmark">HOMEBUSTER</span></a>
   {% if current_user.is_authenticated %}
-  <nav>
+  <nav class="desktop-nav" aria-label="Site navigation">
     <a href="{{ url_for('libraries.index') }}">Libraries</a>
     {% if current_user.is_admin %}<a href="{{ url_for('admin.users') }}">Site Admin</a>{% endif %}
     <span class="user-chip">{{ current_user.username }}</span>
+    <form class="inline" method="post" action="{{ url_for('auth.logout') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="link-button" type="submit">Log out</button>
+    </form>
+  </nav>
+  <button class="mobile-menu-toggle" type="button" aria-expanded="false" aria-controls="mobile-site-menu" aria-label="Open navigation menu">
+    <span aria-hidden="true">☰</span><span class="mobile-menu-label">Menu</span>
+  </button>
+  <nav class="mobile-site-menu" id="mobile-site-menu" aria-label="Mobile site navigation" hidden>
+    <a href="{{ url_for('libraries.index') }}">Libraries</a>
+    {% if current_user.is_admin %}<a href="{{ url_for('admin.users') }}">Site Admin</a>{% endif %}
+    <span class="mobile-user-chip">{{ current_user.username }}</span>
     <form class="inline" method="post" action="{{ url_for('auth.logout') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button class="link-button" type="submit">Log out</button>
@@ -29,5 +41,32 @@
   {% block content %}{% endblock %}
 </main>
 <footer class="site-footer">Homebuster v{{ app_version }}</footer>
+<script>
+(() => {
+  const button = document.querySelector('.mobile-menu-toggle');
+  const menu = document.getElementById('mobile-site-menu');
+  if (!button || !menu) return;
+  const closeMenu = () => {
+    menu.hidden = true;
+    button.setAttribute('aria-expanded', 'false');
+    button.setAttribute('aria-label', 'Open navigation menu');
+  };
+  button.addEventListener('click', () => {
+    const opening = menu.hidden;
+    menu.hidden = !opening;
+    button.setAttribute('aria-expanded', String(opening));
+    button.setAttribute('aria-label', opening ? 'Close navigation menu' : 'Open navigation menu');
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && !menu.hidden) {
+      closeMenu();
+      button.focus();
+    }
+  });
+  document.addEventListener('click', event => {
+    if (!menu.hidden && !menu.contains(event.target) && !button.contains(event.target)) closeMenu();
+  });
+})();
+</script>
 </body>
 </html>

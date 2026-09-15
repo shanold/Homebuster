@@ -467,3 +467,61 @@
   .mobile-menu-label{display:none}
   .mobile-menu-toggle{min-width:44px;width:44px;padding:0}
 }
+
+
+/* v0.3.45: mobile dropdown is a true vertical menu, isolated from film-cell nav rules. */
+@media(max-width:760px){
+  .topbar>.mobile-site-menu{
+    position:absolute;
+    z-index:30;
+    top:56px;
+    right:10px;
+    left:auto;
+    width:min(240px,calc(100vw - 20px));
+    min-width:0;
+    height:auto;
+    margin:0;
+    padding:8px;
+    display:flex;
+    flex-direction:column;
+    align-items:stretch;
+    gap:4px;
+    border:1px solid #414958;
+    border-radius:10px;
+    background:#171b23;
+    box-shadow:0 14px 30px #000b;
+  }
+  .topbar>.mobile-site-menu[hidden]{display:none}
+  .topbar>.mobile-site-menu>*{
+    width:100%;
+    min-width:0;
+    min-height:44px;
+    height:auto;
+    margin:0;
+    padding:0 12px;
+    display:flex;
+    flex:none;
+    align-items:center;
+    justify-content:flex-start;
+    text-align:left;
+    border:0;
+    border-radius:7px;
+    background:#202630;
+    box-shadow:none;
+  }
+  .topbar>.mobile-site-menu>.mobile-user-chip{
+    gap:5px;
+    color:var(--muted);
+  }
+  .topbar>.mobile-site-menu>form{padding:0 12px}
+  .topbar>.mobile-site-menu>form .link-button{
+    width:100%;
+    min-width:0;
+    min-height:44px;
+    height:auto;
+    margin:0;
+    padding:0;
+    justify-content:flex-start;
+    text-align:left;
+  }
+}

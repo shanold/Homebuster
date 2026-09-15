@@ -3,11 +3,13 @@ from __future__ import annotations
 from functools import wraps
 
 from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
+import sqlite3
 from flask_login import current_user, login_required
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from .db import backup_database, get_db
 from .password_policy import password_length_error, password_min_length
+from .auth import USERNAME_RE
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
 
@@ -32,6 +34,35 @@ def users():
         """
     ).fetchall()
     return render_template("admin_users.html", users=rows, password_min_length=password_min_length(current_app.config))
+
+
+@bp.post("/users/create")
+@admin_required
+def create_user():
+    username = (request.form.get("username") or "").strip()
+    password = request.form.get("password") or ""
+    is_admin = 1 if request.form.get("is_admin") == "1" else 0
+    if not USERNAME_RE.fullmatch(username):
+        flash("Username must be 3–32 characters using only letters, numbers, underscores, or hyphens.", "error")
+        return redirect(url_for("admin.users"))
+    if error := password_length_error(password, current_app.config):
+        flash(error, "error")
+        return redirect(url_for("admin.users"))
+    db = get_db()
+    try:
+        cur = db.execute(
+            "INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, ?)",
+            (username, generate_password_hash(password), is_admin),
+        )
+        db.execute("INSERT INTO libraries (name, owner_id) VALUES ('My Movies', ?)", (cur.lastrowid,))
+        db.commit()
+    except sqlite3.IntegrityError:
+        db.rollback()
+        flash("That username is already in use.", "error")
+    else:
+        role = "site admin" if is_admin else "user"
+        flash(f"Created {role} account {username}.", "success")
+    return redirect(url_for("admin.users"))
 
 
 @bp.post("/users/<username>/reset-password")

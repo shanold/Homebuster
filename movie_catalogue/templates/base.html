@@ -11,16 +11,15 @@
 <header class="topbar">
   <a class="brand" href="{{ url_for('libraries.index') if current_user.is_authenticated else url_for('auth.login') }}"><img class="brand-icon" src="{{ url_for('static', filename='favicon.png') }}" alt=""><img class="brand-wordmark-image" src="{{ url_for('static', filename='homebuster-wordmark.png') }}" alt="HOMEBUSTER"></a>
   {% if current_user.is_authenticated %}
-  <div class="filmstrip-grid" aria-hidden="true"></div>
-  <nav class="desktop-nav filmstrip-nav" aria-label="Site navigation">
-    <a href="{{ url_for('libraries.index') }}">Libraries</a>
-    {% if current_user.is_admin %}<a href="{{ url_for('admin.users') }}">Site Admin</a>{% endif %}
-    <span class="user-chip">{{ current_user.username }}</span>
-    <form class="inline" method="post" action="{{ url_for('auth.logout') }}">
+  <div class="desktop-filmstrip" aria-label="Site navigation">
+    <div class="film-cell"><a href="{{ url_for('libraries.index') }}">Libraries</a></div>
+    {% if current_user.is_admin %}<div class="film-cell"><a href="{{ url_for('admin.users') }}">Site Admin</a></div>{% endif %}
+    <div class="film-cell film-cell-user"><span class="user-chip">{{ current_user.username }}</span></div>
+    <div class="film-cell film-cell-logout"><form class="inline" method="post" action="{{ url_for('auth.logout') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button class="link-button" type="submit">Log out</button>
-    </form>
-  </nav>
+    </form></div>
+  </div>
   <button class="mobile-menu-toggle" type="button" aria-expanded="false" aria-controls="mobile-site-menu" aria-label="Open navigation menu">
     <span aria-hidden="true">☰</span><span class="mobile-menu-label">Menu</span>
   </button>

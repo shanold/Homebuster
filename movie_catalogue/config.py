@@ -17,7 +17,7 @@ def default_database_path() -> str:
 
 class Config:
     APP_NAME = "Homebuster"
-    APP_VERSION = "0.3.54"
+    APP_VERSION = "0.3.55"
     DATABASE_PATH = default_database_path()
     SECRET_KEY = os.getenv("SECRET_KEY", "")
     ALLOW_REGISTRATION = env_bool("ALLOW_REGISTRATION", False)
@@ -36,3 +36,4 @@ class Config:
     SESSION_COOKIE_SECURE = env_bool("SESSION_COOKIE_SECURE", False)
     REMEMBER_COOKIE_HTTPONLY = True
     REMEMBER_COOKIE_SAMESITE = "Lax"
+    REMEMBER_COOKIE_SECURE = env_bool("SESSION_COOKIE_SECURE", False)

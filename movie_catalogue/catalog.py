@@ -11,7 +11,8 @@ from flask_login import current_user, login_required
 from .db import get_db
 from .box_set_service import box_set_effective_state, member_effective_state, convert_movie_to_box_set
 from .permissions import require_library_role
-from .integrations import tmdb_collection_search, tmdb_collection_details, tmdb_movie_details
+from .integrations import tmdb_collection_search, tmdb_collection_details, tmdb_movie_details, barcode_product_lookup
+from .barcode_matching import barcode_tmdb_matches, is_barcode_value
 from .smart_collections import backfill_memberships, refresh_collection_cache, suggestions as smart_suggestions, approve as approve_smart_collection, dismiss as dismiss_smart_collection, restore as restore_smart_collection, auto_link_movie
 from .barcode_parser import (
     generate_movie_title_candidates,
@@ -417,7 +418,23 @@ def movie_new(library_id, library, role):
         media_type = _media_type(requested_type)
         api_configured = bool(current_app.config.get("TMDB_API_KEY"))
         results = []
-        if query and api_configured:
+        barcode_lookup = None
+        barcode = None
+        if query and is_barcode_value(query):
+            barcode = query
+            try:
+                product = barcode_product_lookup(barcode)
+                if product:
+                    results, attempts = barcode_tmdb_matches(product, media_type=media_type)
+                    barcode_lookup = {"status": "product_match", "product": product, "attempts": attempts}
+                else:
+                    barcode_lookup = {"status": "provider_not_found"}
+                    flash("The barcode provider did not find a product for that UPC/EAN.", "warning")
+            except Exception as exc:
+                current_app.logger.warning("Web barcode lookup failed: %s", exc)
+                barcode_lookup = {"status": "provider_error"}
+                flash("Barcode lookup failed. You can still search by title or add manually.", "error")
+        elif query and api_configured:
             try:
                 results = _tmdb_search(query, media_type=media_type)
             except requests.RequestException:
@@ -431,6 +448,8 @@ def movie_new(library_id, library, role):
             results=results,
             api_configured=api_configured,
             poster_size=current_app.config.get("TMDB_POSTER_SIZE", "w342"),
+            barcode=barcode,
+            barcode_lookup=barcode_lookup,
         )
 
     values = _movie_form_values(request.form)
@@ -518,6 +537,13 @@ def movie_new_manual(library_id, library, role):
                     "language": data.get("original_language") or "",
                     "country": countries[0].get("name", "") if countries else "",
                 }
+    # Barcode-originated TMDb choices carry physical-copy metadata into the normal review form.
+    if request.args.get("barcode"):
+        prefill["barcode"] = request.args.get("barcode", "")
+        for key in ("format", "version", "language", "region", "disc_count"):
+            value = request.args.get(key)
+            if value not in (None, ""):
+                prefill[key] = value
 
     shelves = db.execute(
         "SELECT * FROM shelves WHERE library_id=? ORDER BY sort_order,name COLLATE NOCASE",

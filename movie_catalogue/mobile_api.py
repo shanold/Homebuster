@@ -10,6 +10,7 @@ from werkzeug.security import check_password_hash
 from .db import get_db
 from .box_set_service import (BoxSetLoanConflict, create_box_set, get_box_set, get_box_set_members, box_set_effective_state, member_effective_state, loan_box_set, return_box_set, loan_box_set_member, return_box_set_member)
 from .integrations import barcode_product_lookup, tmdb_search, tmdb_collection_search, tmdb_collection_details
+from .barcode_matching import barcode_tmdb_matches
 from .barcode_parser import (
     best_match_score,
     generate_movie_title_candidates,
@@ -484,51 +485,6 @@ def tmdb_lookup():
         return _json_error("TMDb lookup failed", 502)
 
 
-def _barcode_tmdb_matches(product: dict, media_type: str = "movie") -> tuple[list[dict], list[dict]]:
-    """Use the same candidate generator as web Identify/Repair for scanner TMDb searches."""
-    raw_title = str(product.get("product_title") or "").strip()
-    year = product.get("search_year")
-
-    queries: list[tuple[str, int | None]] = []
-    candidates = search_ready_title_candidates(raw_title, media_type=media_type)
-    for value in (product.get("search_title"), *candidates, product.get("fallback_title")):
-        title = str(value or "").strip()
-        if not title:
-            continue
-        key = (title.casefold(), year)
-        if any((q.casefold(), y) == key for q, y in queries):
-            continue
-        queries.append((title, year))
-
-    merged: dict[object, dict] = {}
-    attempts: list[dict] = []
-    for query_title, query_year in queries[:3]:
-        raw = tmdb_search(query_title, query_year, media_type=media_type)
-        ranked = rank_tmdb_results(query_title, query_year, raw)
-        attempts.append({
-            "title": query_title,
-            "year": query_year,
-            "results": len(ranked),
-            "best_score": best_match_score(ranked),
-        })
-        for item in ranked:
-            key = item.get("tmdb_id") or (item.get("title"), item.get("year"))
-            current = merged.get(key)
-            if current is None or int(item.get("match_score") or 0) > int(current.get("match_score") or 0):
-                merged[key] = item
-        if best_match_score(merged.values()) >= 105:
-            break
-
-    results = sorted(
-        merged.values(),
-        key=lambda item: (-int(item.get("match_score") or 0), str(item.get("title") or "").lower()),
-    )[:20]
-    for item in results:
-        item["copy_metadata"] = infer_copy_metadata_from_legacy_title(raw_title, item.get("title") or "", media_type=media_type)
-        item["media_type"] = media_type
-    return results, attempts
-
-
 @bp.get("/barcodes/<upc>")
 @token_required
 def barcode_lookup(upc):
@@ -600,7 +556,7 @@ def barcode_lookup(upc):
     search_title = (product.get("search_title") or product.get("product_title") or "").strip()
     search_year = product.get("search_year")
     try:
-        matches, attempts = _barcode_tmdb_matches(product, media_type=media_type)
+        matches, attempts = barcode_tmdb_matches(product, media_type=media_type)
     except Exception as exc:
         current_app.logger.warning("TMDb barcode match lookup failed: %s", exc)
         matches, attempts = [], []

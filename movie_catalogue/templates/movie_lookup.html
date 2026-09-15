@@ -3,43 +3,26 @@
 {% block content %}
 {% include '_library_nav.html' %}
 <section class="panel lookup-panel">
-  <div class="page-heading">
-    <div><h2>Add Title</h2><p>Search TMDb first to fill in the title, year, poster, and TMDb ID automatically.</p></div>
-    <a class="button" href="{{ url_for('catalog.movie_new_manual', library_id=library.id, media_type=media_type) }}">Add manually</a>
-  </div>
-  {% if api_configured %}
-  <form method="get" class="tmdb-search-form">
-    <label>Type
-      <select name="media_type">
-        <option value="movie" {% if media_type != 'tv' %}selected{% endif %}>Movie</option>
-        <option value="tv" {% if media_type == 'tv' %}selected{% endif %}>TV / Box Set</option>
-        <option value="collection">Movie Collection / Box Set</option>
-      </select>
-    </label>
-    <label class="grow">Title
-      <input name="q" value="{{ query }}" placeholder="{{ 'Breaking Bad' if media_type == 'tv' else 'Spider-Man' }}" autofocus required>
-    </label>
-    <button class="primary" type="submit">Search TMDb</button>
+  <div class="page-heading"><div><h2>Add Title</h2><p>Type a title to search TMDb, enter/scan a UPC or EAN, or use your camera.</p></div><a class="button" href="{{ url_for('catalog.movie_new_manual', library_id=library.id, media_type=media_type) }}">Add manually</a></div>
+  <form method="get" class="tmdb-search-form" id="smart-add-form">
+    <label>Type<select name="media_type"><option value="movie" {% if media_type != 'tv' %}selected{% endif %}>Movie</option><option value="tv" {% if media_type == 'tv' %}selected{% endif %}>TV / Box Set</option><option value="collection">Movie Collection / Box Set</option></select></label>
+    <label class="grow">Title or barcode<input id="smart-add-query" name="q" value="{{ query }}" placeholder="Spider-Man or 085391163921" autofocus required></label>
+    <button class="primary" type="submit">Search</button><button class="button" id="barcode-camera-button" type="button">Scan Barcode</button>
   </form>
-  <p class="muted">Movie is the default. Movie, TV, and Collection searches use only the endpoint you choose.</p>
-  {% else %}
-  <div class="flash warning">TMDb lookup is unavailable because <code>TMDB_API_KEY</code> is not configured. You can still add titles manually.</div>
-  {% endif %}
+  <p class="muted">USB/Bluetooth barcode scanners can type directly into this field. Camera scanning requires browser camera support and normally HTTPS.</p>
+  <div id="barcode-camera-area" hidden><video id="barcode-camera-video" playsinline muted style="width:min(100%,560px);border-radius:12px"></video><p id="barcode-camera-status" class="muted"></p><button type="button" class="button" id="barcode-camera-stop">Stop camera</button></div>
+  {% if not api_configured %}<div class="flash warning">TMDb lookup is unavailable because <code>TMDB_API_KEY</code> is not configured. Barcode provider lookup and manual entry may still be available.</div>{% endif %}
 </section>
-{% if query and api_configured %}
-<div class="page-heading"><div><h2>TMDb results</h2><p>Choose the correct {{ 'series' if media_type == 'tv' else 'release' }}, then review the physical-copy details.</p></div></div>
-<div class="movie-grid identify-grid lookup-results">
-  {% for result in results %}
-  <article class="movie-card static">
-    <div class="poster-wrap">{% if result.poster_path %}<img src="https://image.tmdb.org/t/p/{{ poster_size }}{{ result.poster_path }}" alt="Poster for {{ result.title }}">{% else %}<div class="poster-placeholder">🎬</div>{% endif %}</div>
-    <div class="movie-meta">
-      <span class="tag">{{ 'TV' if media_type == 'tv' else 'Movie' }}</span>
-      <h3>{{ result.title }}</h3><p>{{ (result.release_date or '')[:4] or 'Year unknown' }}</p>
-      {% if result.overview %}<p class="lookup-overview">{{ result.overview }}</p>{% endif %}
-      <a class="button primary full-width" href="{{ url_for('catalog.movie_new_manual', library_id=library.id, tmdb_id=result.id, media_type=media_type) }}">Use this {{ 'series' if media_type == 'tv' else 'movie' }}</a>
-    </div>
-  </article>
-  {% else %}<div class="empty">No TMDb results found for “{{ query }}”. Try another title or switch media type.</div>{% endfor %}
-</div>
-{% endif %}
+{% if barcode_lookup and barcode_lookup.product %}<div class="flash success">Barcode {{ barcode }} matched product: {{ barcode_lookup.product.product_title or 'Unknown product' }}. Choose the correct TMDb match below.</div>{% endif %}
+{% if query and results %}
+<div class="page-heading"><div><h2>{{ 'Barcode' if barcode else 'TMDb' }} results</h2><p>Choose the correct {{ 'series' if media_type == 'tv' else 'release' }}, then review the physical-copy details.</p></div></div>
+<div class="movie-grid identify-grid lookup-results">{% for result in results %}<article class="movie-card static"><div class="poster-wrap">{% if result.poster_path %}<img src="https://image.tmdb.org/t/p/{{ poster_size }}{{ result.poster_path }}" alt="Poster for {{ result.title }}">{% else %}<div class="poster-placeholder">🎬</div>{% endif %}</div><div class="movie-meta"><span class="tag">{{ 'TV' if media_type == 'tv' else 'Movie' }}</span><h3>{{ result.title }}</h3><p>{{ result.year or (result.release_date or '')[:4] or 'Year unknown' }}</p>{% if result.overview %}<p class="lookup-overview">{{ result.overview }}</p>{% endif %}<a class="button primary full-width" href="{{ url_for('catalog.movie_new_manual', library_id=library.id, tmdb_id=(result.tmdb_id or result.id), media_type=media_type, barcode=barcode, format=(result.copy_metadata.format if result.copy_metadata else ''), version=(result.copy_metadata.edition if result.copy_metadata else ''), language=(result.copy_metadata.language if result.copy_metadata else ''), region=(result.copy_metadata.region if result.copy_metadata else ''), disc_count=(result.copy_metadata.disc_count if result.copy_metadata else '')) }}">Use this {{ 'series' if media_type == 'tv' else 'movie' }}</a></div></article>{% endfor %}</div>
+{% elif query and not barcode_lookup %}<div class="empty">No TMDb results found for “{{ query }}”. Try another title or switch media type.</div>{% endif %}
+<script>
+(() => {
+ const button=document.getElementById('barcode-camera-button'), area=document.getElementById('barcode-camera-area'), video=document.getElementById('barcode-camera-video'), status=document.getElementById('barcode-camera-status'), input=document.getElementById('smart-add-query'), form=document.getElementById('smart-add-form'); let stream=null, stopped=true;
+ const stop=()=>{stopped=true;if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}area.hidden=true}; document.getElementById('barcode-camera-stop').addEventListener('click',stop);
+ button.addEventListener('click',async()=>{if(!('BarcodeDetector' in window)){status.textContent='This browser does not support camera barcode detection. Use a USB/Bluetooth scanner or type the barcode.';area.hidden=false;return} if(!navigator.mediaDevices?.getUserMedia){status.textContent='Camera access is unavailable here. HTTPS is normally required.';area.hidden=false;return} try{const detector=new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e','itf']});stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}}});video.srcObject=stream;await video.play();stopped=false;area.hidden=false;status.textContent='Point the camera at the barcode.';const scan=async()=>{if(stopped)return;try{const codes=await detector.detect(video);if(codes.length){input.value=codes[0].rawValue;stop();form.requestSubmit();return}}catch(e){}requestAnimationFrame(scan)};scan()}catch(e){status.textContent='Camera permission was denied or the camera could not be opened.';area.hidden=false}});
+})();
+</script>
 {% endblock %}

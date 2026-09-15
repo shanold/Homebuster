@@ -5,7 +5,7 @@ body=[ast.ImportFrom(module='__future__',names=[ast.alias(name='annotations')],l
 for n in tree.body:
     if isinstance(n,(ast.Assign,ast.ClassDef,ast.FunctionDef)):
         body.append(n)
-mod=ast.Module(body=body,type_ignores=[]); ast.fix_missing_locations(mod); ns={'ensure_organizational_collection_for_box_set': lambda *a, **k: None}; exec(compile(mod,'svc','exec'),ns)
+mod=ast.Module(body=body,type_ignores=[]); ast.fix_missing_locations(mod); ns={}; exec(compile(mod,'svc','exec'),ns)
 db=sqlite3.connect(':memory:'); db.row_factory=sqlite3.Row; db.execute('PRAGMA foreign_keys=ON')
 db.executescript('''
 CREATE TABLE box_sets(id INTEGER PRIMARY KEY AUTOINCREMENT,library_id INTEGER,barcode TEXT,title TEXT,tmdb_collection_id INTEGER,poster_path TEXT,format TEXT,version TEXT,country TEXT,language TEXT,region TEXT,disc_count INTEGER,notes TEXT,shelf_id INTEGER,status TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP,updated_at TEXT DEFAULT CURRENT_TIMESTAMP);

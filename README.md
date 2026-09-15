@@ -415,10 +415,12 @@ Shelf View case previews now render the poster as an insert inside a molded-look
 - The **Show movies on other shelves** filter now applies immediately when checked or unchecked; the server-side shelf query remains the same and continues to exclude movies already on the current shelf.
 - The header **Homebuster** wordmark now uses a bold block-style local font stack and purple lettering while keeping the existing house icon and film-strip header.
 
-
 ## v0.3.41
-- Movie-only TMDb-backed Smart Collection recommendations use a 2-movie / 50%-of-released threshold and distinct TMDb identities.
-- Suggestions can be dismissed/restored per library, and Smart Collections can be disabled without deleting approved collections.
-- Approved TMDb-backed collections auto-maintain owned membership; physical movie box sets synchronize their contained films into the organizational collection.
-- Existing libraries use bounded membership backfill and collection-detail refreshes throttled to at most once per 24 hours.
-- Header wordmark is now HOMEBUSTER with a restrained yellow glow.
+
+- Adds movie-only TMDb-backed Smart Collection suggestions. A suggestion appears after you own at least 2 distinct films and at least 50% of the released TMDb collection.
+- Smart suggestions can be approved, dismissed, restored with **Show dismissed collections**, or disabled per Library.
+- Existing libraries are checked in bounded batches; TMDb collection totals are cached and refreshed no more than once per 24 hours.
+- Approved Smart Collections remain normal Homebuster Collections and newly identified owned movies automatically join them.
+- Adding or identifying a physical TMDb Movie Collection / Box Set automatically creates/reuses its organizational Collection and links the contained first-class movie records, never the physical parent card.
+- Smart Collections never add movies you do not own and do not send new-release notifications.
+- Header wordmark is now uppercase **HOMEBUSTER** with the purple block treatment and a restrained yellow glow.

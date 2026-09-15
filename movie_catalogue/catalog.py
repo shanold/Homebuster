@@ -12,7 +12,7 @@ from .db import get_db
 from .box_set_service import box_set_effective_state, member_effective_state, convert_movie_to_box_set
 from .permissions import require_library_role
 from .integrations import tmdb_collection_search, tmdb_collection_details, tmdb_movie_details
-from .smart_collections import backfill_uncached_movie_memberships, refresh_known_collections, get_smart_collection_suggestions, approve_smart_collection, dismiss_smart_collection, restore_smart_collection, cache_movie_collection_membership, auto_link_movie_to_approved_collection
+from .smart_collections import backfill_memberships, refresh_collection_cache, suggestions as smart_suggestions, approve as approve_smart_collection, dismiss as dismiss_smart_collection, restore as restore_smart_collection, auto_link_movie
 from .barcode_parser import (
     generate_movie_title_candidates,
     search_ready_movie_title_candidates,
@@ -220,10 +220,9 @@ def _apply_identified_movie(db, movie, data, tmdb_id, media_type=None):
             movie["id"], movie["library_id"],
         ),
     )
-    if media_type == "movie" and tmdb_id:
-        if "belongs_to_collection" in data:
-            cache_movie_collection_membership(db, int(tmdb_id), data.get("belongs_to_collection"))
-        auto_link_movie_to_approved_collection(db, int(movie["id"]))
+    if media_type == "movie":
+        relation = data.get("belongs_to_collection") if isinstance(data, dict) else None
+        auto_link_movie(db, int(movie["library_id"]), int(movie["id"]), tmdb_id, relation)
     return metadata_changed, inferred
 
 def _int_or_none(value):
@@ -455,6 +454,12 @@ def movie_new(library_id, library, role):
             (library_id, *[values[k] for k in MOVIE_FIELDS]),
         )
         _sync_collections(db, library_id, cur.lastrowid, request.form)
+        if values["media_type"] == "movie" and values["tmdb_id"]:
+            try:
+                smart_details = tmdb_movie_details(values["tmdb_id"])
+                auto_link_movie(db, library_id, cur.lastrowid, values["tmdb_id"], (smart_details or {}).get("belongs_to_collection"))
+            except Exception:
+                auto_link_movie(db, library_id, cur.lastrowid, values["tmdb_id"])
         db.commit()
         flash("Title added.", "success")
         return redirect(url_for("catalog.movie_detail", library_id=library_id, movie_id=cur.lastrowid))
@@ -909,42 +914,48 @@ def collections(library_id, library, role):
             except Exception:
                 db.rollback(); flash("That Collection already exists.", "warning")
         return redirect(url_for("catalog.collections", library_id=library_id))
-    rows = db.execute(
-        "SELECT c.*,COUNT(mc.movie_id) AS movie_count FROM collections c LEFT JOIN movie_collections mc ON mc.collection_id=c.id "
-        "WHERE c.library_id=? GROUP BY c.id ORDER BY c.name COLLATE NOCASE", (library_id,),
-    ).fetchall()
     show_dismissed = request.args.get("show_dismissed") == "1"
-    suggestions = []
-    smart_status = {"unchecked_movies": 0, "processed_this_request": 0, "refreshes_this_request": 0}
-    if library["smart_collections_enabled"]:
+    remaining = 0
+    if int(library["smart_collections_enabled"]):
         try:
-            b = backfill_uncached_movie_memberships(db, library_id, tmdb_movie_details, limit=8)
-            r = refresh_known_collections(db, library_id, tmdb_collection_details, limit=2)
-            db.commit()
-            smart_status = {"unchecked_movies": b["unchecked_movies"], "processed_this_request": b["processed"], "refreshes_this_request": r["refreshed"]}
-        except Exception as exc:
-            db.rollback(); current_app.logger.warning("Smart Collections housekeeping failed: %s", exc)
-        suggestions = get_smart_collection_suggestions(db, library_id, show_dismissed=show_dismissed)
-    return render_template("collections.html", library=library, role=role, collections=rows, smart_suggestions=suggestions, smart_status=smart_status, show_dismissed=show_dismissed)
+            _, remaining = backfill_memberships(db, library_id, tmdb_movie_details)
+            candidate_ids=[r[0] for r in db.execute("SELECT DISTINCT c.tmdb_collection_id FROM movies m JOIN tmdb_movie_collection_cache c ON c.tmdb_movie_id=m.tmdb_id WHERE m.library_id=? AND c.tmdb_collection_id IS NOT NULL",(library_id,)).fetchall()]
+            refresh_collection_cache(db,candidate_ids,tmdb_collection_details)
+        except Exception:
+            db.rollback()
+        smart = smart_suggestions(db, library_id, show_dismissed)
+    else:
+        smart = []
+    rows = db.execute(
+        "SELECT c.*,COUNT(mc.movie_id) AS movie_count FROM collections c LEFT JOIN movie_collections mc ON mc.collection_id=c.id WHERE c.library_id=? GROUP BY c.id ORDER BY c.name COLLATE NOCASE",
+        (library_id,),
+    ).fetchall()
+    return render_template("collections.html", library=library, role=role, collections=rows, smart_suggestions=smart, show_dismissed=show_dismissed, smart_backfill_remaining=remaining)
 
 
-@bp.post("/libraries/<int:library_id>/smart-collections/<int:tmdb_collection_id>/approve")
+@bp.post("/libraries/<int:library_id>/collections/smart/<int:tmdb_collection_id>/approve")
 @login_required
 @require_library_role("editor")
 def smart_collection_approve(library_id, tmdb_collection_id, library, role):
-    db=get_db(); approve_smart_collection(db,library_id,tmdb_collection_id); db.commit(); flash("Collection created from your owned movies.","success"); return redirect(url_for("catalog.collections",library_id=library_id))
+    db=get_db(); approve_smart_collection(db,library_id,tmdb_collection_id); flash("Smart Collection created.","success")
+    return redirect(url_for("catalog.collections",library_id=library_id))
 
-@bp.post("/libraries/<int:library_id>/smart-collections/<int:tmdb_collection_id>/dismiss")
+
+@bp.post("/libraries/<int:library_id>/collections/smart/<int:tmdb_collection_id>/dismiss")
 @login_required
 @require_library_role("editor")
 def smart_collection_dismiss(library_id, tmdb_collection_id, library, role):
-    db=get_db(); dismiss_smart_collection(db,library_id,tmdb_collection_id); db.commit(); flash("Smart Collection suggestion dismissed.","success"); return redirect(url_for("catalog.collections",library_id=library_id))
+    dismiss_smart_collection(get_db(),library_id,tmdb_collection_id); flash("Suggestion dismissed.","success")
+    return redirect(url_for("catalog.collections",library_id=library_id))
 
-@bp.post("/libraries/<int:library_id>/smart-collections/<int:tmdb_collection_id>/restore")
+
+@bp.post("/libraries/<int:library_id>/collections/smart/<int:tmdb_collection_id>/restore")
 @login_required
 @require_library_role("editor")
 def smart_collection_restore(library_id, tmdb_collection_id, library, role):
-    db=get_db(); restore_smart_collection(db,library_id,tmdb_collection_id); db.commit(); flash("Smart Collection suggestion restored.","success"); return redirect(url_for("catalog.collections",library_id=library_id,show_dismissed=1))
+    restore_smart_collection(get_db(),library_id,tmdb_collection_id); flash("Suggestion restored.","success")
+    return redirect(url_for("catalog.collections",library_id=library_id,show_dismissed=1))
+
 
 @bp.post("/libraries/<int:library_id>/collections/<int:collection_id>/delete")
 @login_required

@@ -9,18 +9,20 @@
 </head>
 <body>
 <header class="topbar">
-  <a class="brand" href="{{ url_for('libraries.index') if current_user.is_authenticated else url_for('auth.login') }}"><img class="brand-icon" src="{{ url_for('static', filename='favicon.png') }}" alt=""><span class="brand-wordmark">HOMEBUSTER</span></a>
-  {% if current_user.is_authenticated %}
-  <nav>
-    <a href="{{ url_for('libraries.index') }}">Libraries</a>
-    {% if current_user.is_admin %}<a href="{{ url_for('admin.users') }}">Site Admin</a>{% endif %}
-    <span class="user-chip">{{ current_user.username }}</span>
-    <form class="inline" method="post" action="{{ url_for('auth.logout') }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button class="link-button" type="submit">Log out</button>
-    </form>
-  </nav>
-  {% endif %}
+  <div class="topbar-film-grid">
+    <a class="brand film-brand-cell" href="{{ url_for('libraries.index') if current_user.is_authenticated else url_for('auth.login') }}"><img class="brand-icon" src="{{ url_for('static', filename='favicon.png') }}" alt=""><span class="brand-wordmark">HOMEBUSTER</span></a>
+    {% if current_user.is_authenticated %}
+    <nav>
+      <a class="film-nav-cell" href="{{ url_for('libraries.index') }}">Libraries</a>
+      {% if current_user.is_admin %}<a class="film-nav-cell" href="{{ url_for('admin.users') }}">Site Admin</a>{% endif %}
+      <span class="user-chip film-nav-cell">{{ current_user.username }}</span>
+      <form class="inline film-nav-cell" method="post" action="{{ url_for('auth.logout') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="link-button" type="submit">Log out</button>
+      </form>
+    </nav>
+    {% endif %}
+  </div>
 </header>
 <main class="container">
   {% with messages = get_flashed_messages(with_categories=true) %}

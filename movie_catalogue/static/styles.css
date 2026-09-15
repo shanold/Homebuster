@@ -149,6 +149,85 @@
   font-weight:900;
   letter-spacing:.035em;
   line-height:1;
-  text-shadow:0 1px 0 rgba(57,20,82,.95),0 0 4px rgba(255,214,80,.38);
+  text-shadow:0 2px 0 #3b1457,0 0 3px rgba(255,220,70,.42),0 0 10px rgba(181,108,255,.22);
 }
 @media(max-width:620px){.topbar .brand-wordmark{font-size:21px}}
+
+
+/* v0.3.42 responsive film-cell alignment
+   The divider artwork and controls now share the same centered grid origin. */
+.topbar{
+  padding-left:0;
+  padding-right:0;
+}
+.topbar-film-grid{
+  width:100%;
+  min-height:64px;
+  display:grid;
+  grid-template-columns:repeat(auto-fit,var(--film-cell));
+  grid-auto-flow:column;
+  align-items:center;
+  justify-content:center;
+  position:relative;
+  z-index:1;
+}
+.topbar>.topbar-film-grid>.brand,
+.topbar-film-grid nav>*{
+  margin:0;
+  min-height:40px;
+  background:rgba(24,27,32,.72);
+  border:0;
+  box-shadow:none;
+}
+.topbar-film-grid>.film-brand-cell{
+  grid-column:span 2;
+  width:calc(var(--film-cell) * 2);
+  justify-content:center;
+  padding:0 14px;
+}
+.topbar-film-grid nav{
+  display:contents;
+}
+.film-nav-cell{
+  width:var(--film-cell);
+  min-width:var(--film-cell);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:0 10px;
+  text-align:center;
+}
+.topbar-film-grid .film-nav-cell .link-button{
+  width:100%;
+  height:100%;
+  justify-content:center;
+}
+.topbar::before{
+  left:50%;
+  right:auto;
+  width:100%;
+  transform:translateX(-50%);
+  background:
+    repeating-linear-gradient(
+      90deg,
+      transparent 0 calc(var(--film-cell) - var(--film-divider)),
+      rgba(126,132,142,.34) calc(var(--film-cell) - var(--film-divider)) var(--film-cell)
+    ),
+    linear-gradient(180deg,#08090b 0 18%,#17191d 18% 82%,#08090b 82% 100%);
+  background-position-x:calc(50% - (var(--film-cell) / 2));
+}
+@media(max-width:620px){
+  .topbar{height:auto;min-height:64px}
+  .topbar-film-grid{
+    grid-template-columns:repeat(auto-fit,var(--film-cell));
+    grid-auto-flow:row;
+    min-height:64px;
+    justify-content:center;
+  }
+  .topbar-film-grid>.film-brand-cell{
+    grid-column:span 2;
+  }
+  .film-nav-cell{
+    min-height:36px;
+  }
+}

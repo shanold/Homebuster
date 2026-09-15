@@ -43,6 +43,6 @@ for selector in ['.visual-shelf', '.shelf-row', '.shelf-case', '.shelf-case-spin
 assert '--shelf-columns' in css
 assert '@media(max-width:620px)' in css
 
-assert any(v in config_py for v in ('APP_VERSION = "0.3.32"', 'APP_VERSION = "0.3.33"', 'APP_VERSION = "0.3.34"','APP_VERSION = "0.3.35"', 'APP_VERSION = "0.3.36"', 'APP_VERSION = "0.3.37"', 'APP_VERSION = "0.3.38"', 'APP_VERSION = "0.3.39"', 'APP_VERSION = "0.3.40"','APP_VERSION = "0.3.41"'))
+assert any(v in config_py for v in ('APP_VERSION = "0.3.32"', 'APP_VERSION = "0.3.33"', 'APP_VERSION = "0.3.34"','APP_VERSION = "0.3.35"', 'APP_VERSION = "0.3.36"', 'APP_VERSION = "0.3.37"', 'APP_VERSION = "0.3.38"', 'APP_VERSION = "0.3.39"', 'APP_VERSION = "0.3.40"', 'APP_VERSION = "0.3.41"'))
 assert '## v0.3.32' in readme
 print('v0.3.32 shelf view checks passed')

@@ -81,6 +81,17 @@ def set_default_media_type(library_id, library, role):
     return redirect(url_for("libraries.settings", library_id=library_id))
 
 
+@bp.post("/<int:library_id>/settings/smart-collections")
+@login_required
+@require_library_role("owner")
+def set_smart_collections(library_id, library, role):
+    db = get_db()
+    db.execute("UPDATE libraries SET smart_collections_enabled=? WHERE id=?", (1 if request.form.get("smart_collections_enabled") else 0, library_id))
+    db.commit()
+    flash("Smart Collections setting updated.", "success")
+    return redirect(url_for("libraries.settings", library_id=library_id))
+
+
 @bp.post("/<int:library_id>/settings/box-set-members")
 @login_required
 @require_library_role("editor")

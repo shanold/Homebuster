@@ -149,6 +149,6 @@
   font-weight:900;
   letter-spacing:.035em;
   line-height:1;
-  text-shadow:0 2px 0 #3b1457,0 0 10px rgba(181,108,255,.22);
+  text-shadow:0 2px 0 #3b1457,0 0 3px rgba(255,220,70,.42),0 0 10px rgba(181,108,255,.22);
 }
 @media(max-width:620px){.topbar .brand-wordmark{font-size:21px}}

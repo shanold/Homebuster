@@ -131,6 +131,27 @@ def tmdb_collection_search(query: str):
     return results
 
 
+
+def tmdb_movie_details(movie_id: int):
+    """Return normalized TMDb movie details including official collection membership."""
+    key = (current_app.config.get("TMDB_API_KEY") or "").strip()
+    if not key:
+        return None
+    response = requests.get(f"https://api.themoviedb.org/3/movie/{int(movie_id)}", params={"api_key": key}, timeout=10)
+    if response.status_code == 404:
+        return None
+    response.raise_for_status()
+    item = response.json()
+    relation = item.get("belongs_to_collection")
+    belongs = None
+    if relation and relation.get("id"):
+        belongs = {"id": int(relation["id"]), "name": relation.get("name") or "Collection"}
+    return {
+        "id": item.get("id"), "title": item.get("title") or item.get("original_title") or "",
+        "release_date": item.get("release_date") or "", "poster_path": item.get("poster_path"),
+        "belongs_to_collection": belongs,
+    }
+
 def tmdb_collection_details(collection_id: int):
     key = (current_app.config.get("TMDB_API_KEY") or "").strip()
     if not key:

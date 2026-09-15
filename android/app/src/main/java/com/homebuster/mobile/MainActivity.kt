@@ -35,7 +35,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-enum class Screen { LOGIN, LIBRARY, DETAILS, COLLECTIONS, LOANS, MORE, SCANNER, BARCODE_RESULT }
+enum class Screen { LOGIN, LIBRARY, DETAILS, COLLECTIONS, COLLECTION_DETAIL, LOANS, LOAN_FORM, MORE, SHELF_DETAIL, SCANNER, BARCODE_RESULT }
 
 data class MovieGroup(val key: String, val primary: Movie, val copies: List<Movie>) {
     val formatsSummary: String
@@ -69,6 +69,9 @@ fun HomebusterApp(store: SessionStore) {
     var serverVersion by remember { mutableStateOf<String?>(null) }
     var screen by remember { mutableStateOf(if (token == null || server.isBlank()) Screen.LOGIN else Screen.LIBRARY) }
     var selected by remember { mutableStateOf<MovieGroup?>(null) }
+    var selectedCopy by remember { mutableStateOf<Movie?>(null) }
+    var selectedCollection by remember { mutableStateOf<CollectionItem?>(null) }
+    var selectedShelf by remember { mutableStateOf<Shelf?>(null) }
     var scanned by remember { mutableStateOf<BarcodeResponse?>(null) }
     var libraries by remember { mutableStateOf<List<Library>>(emptyList()) }
     var activeLibraryId by remember { mutableStateOf<Int?>(null) }
@@ -96,6 +99,9 @@ fun HomebusterApp(store: SessionStore) {
     val navigateBack: () -> Unit = {
         screen = when (screen) {
             Screen.DETAILS, Screen.COLLECTIONS, Screen.LOANS, Screen.MORE, Screen.SCANNER, Screen.BARCODE_RESULT -> Screen.LIBRARY
+            Screen.COLLECTION_DETAIL -> Screen.COLLECTIONS
+            Screen.SHELF_DETAIL -> Screen.MORE
+            Screen.LOAN_FORM -> Screen.DETAILS
             else -> screen
         }
     }
@@ -123,10 +129,25 @@ fun HomebusterApp(store: SessionStore) {
                 onScan = { screen = Screen.SCANNER },
                 onLogout = { store.clear(); token = null; serverVersion = null; libraries = emptyList(); activeLibraryId = null; screen = Screen.LOGIN }
             )
-            Screen.DETAILS -> MovieDetailScreen(api!!, token!!, selected!!, activeLibrary, navigateBack)
-            Screen.COLLECTIONS -> CollectionsScreen(api!!, token!!, activeLibrary, navigateBack)
+            Screen.DETAILS -> MovieDetailScreen(
+                api!!, token!!, selected!!, activeLibrary,
+                onLoan = { selectedCopy = it; screen = Screen.LOAN_FORM },
+                onBack = navigateBack
+            )
+            Screen.COLLECTIONS -> CollectionsScreen(
+                api!!, token!!, activeLibrary,
+                onCollection = { selectedCollection = it; screen = Screen.COLLECTION_DETAIL },
+                onBack = navigateBack
+            )
+            Screen.COLLECTION_DETAIL -> CollectionDetailScreen(api!!, token!!, selectedCollection!!, onMovie = { selected = it; screen = Screen.DETAILS }, onBack = navigateBack)
             Screen.LOANS -> LoansScreen(api!!, token!!, navigateBack)
-            Screen.MORE -> MoreScreen(api!!, token!!, libraries, activeLibrary, { activeLibraryId = it.id }, navigateBack)
+            Screen.LOAN_FORM -> LoanFormScreen(api!!, token!!, selectedCopy!!, navigateBack)
+            Screen.MORE -> MoreScreen(
+                api!!, token!!, libraries, activeLibrary, { activeLibraryId = it.id },
+                onShelf = { selectedShelf = it; screen = Screen.SHELF_DETAIL },
+                onBack = navigateBack
+            )
+            Screen.SHELF_DETAIL -> ShelfDetailScreen(api!!, token!!, selectedShelf!!, onMovie = { selected = it; screen = Screen.DETAILS }, onBack = navigateBack)
             Screen.SCANNER -> ScannerScreen(onCode = { code ->
                 scanned = BarcodeResponse(status = "loading", upc = code, movie = null, product = null, lookup = null)
                 screen = Screen.BARCODE_RESULT
@@ -290,24 +311,50 @@ private fun LibraryScreen(
 }
 
 @Composable
-private fun MovieDetailScreen(api: HomebusterApi, token: String, group: MovieGroup, activeLibrary: Library?, onBack: () -> Unit) {
+private fun MovieDetailScreen(
+    api: HomebusterApi,
+    token: String,
+    group: MovieGroup,
+    activeLibrary: Library?,
+    onLoan: (Movie) -> Unit,
+    onBack: () -> Unit
+) {
     val scope = rememberCoroutineScope()
+    val formatChoices = listOf("Blu-ray", "Blu-ray + DVD", "4K", "4K UHD", "DVD", "HD DVD", "VHS", "Other")
+    var selectedCopy by remember(group.key) { mutableStateOf(group.copies.first()) }
+    var shelves by remember { mutableStateOf<List<Shelf>>(emptyList()) }
+    var showMore by remember { mutableStateOf(false) }
     var actionMessage by remember { mutableStateOf<String?>(null) }
-    var borrower by remember { mutableStateOf("") }
-    var editTitle by remember(group.primary.id) { mutableStateOf(group.primary.title) }
-    var editFormat by remember(group.primary.id) { mutableStateOf(group.primary.format) }
+    var editTitle by remember(selectedCopy.id) { mutableStateOf(selectedCopy.title) }
+    var editFormat by remember(selectedCopy.id) { mutableStateOf(selectedCopy.format.takeIf { it in formatChoices } ?: "Other") }
+    var editShelfId by remember(selectedCopy.id) { mutableStateOf(selectedCopy.shelfId) }
+    var formatMenu by remember { mutableStateOf(false) }
+    var shelfMenu by remember { mutableStateOf(false) }
+
+    LaunchedEffect(activeLibrary?.id) {
+        runCatching { api.shelves("Bearer $token").shelves }
+            .onSuccess { all -> shelves = all.filter { activeLibrary == null || it.libraryId == activeLibrary.id } }
+    }
+
     val movie = group.primary
+    val selectedShelfName = shelves.firstOrNull { it.id == selectedCopy.shelfId }?.name ?: "Unassigned"
+
     LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        item { HomebusterScreenHeader("Movie details", onBack) }
+        item { HomebusterScreenHeader("Media details", onBack) }
         item {
             HomebusterPanel {
-                AsyncImage(model = movie.posterUrl, contentDescription = movie.title, modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp).aspectRatio(2f / 3f), contentScale = ContentScale.Fit)
+                AsyncImage(
+                    model = movie.posterUrl,
+                    contentDescription = movie.title,
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp).aspectRatio(2f / 3f),
+                    contentScale = ContentScale.Fit
+                )
                 Spacer(Modifier.height(14.dp))
                 Text(movie.title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                     movie.year?.let { HomebusterMetaChip(it.toString()) }
-                    movie.runtime?.let { HomebusterMetaChip("$it min") }
+                    HomebusterMetaChip(if (movie.mediaType == "tv") "TV" else "Movie", HbAccent)
                 }
                 if (group.copies.size > 1) {
                     Spacer(Modifier.height(8.dp))
@@ -315,65 +362,208 @@ private fun MovieDetailScreen(api: HomebusterApi, token: String, group: MovieGro
                 }
             }
         }
+
         item {
             HomebusterPanel {
-                Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) { HomebusterMetaChip(if (movie.mediaType == "tv") "TV" else "Movie", HbAccent); Text(if (group.copies.size == 1) "Physical copy" else "Physical copies", fontWeight = FontWeight.Bold) }
+                Text(if (group.copies.size == 1) "Physical copy" else "Choose physical copy", fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(8.dp))
-                group.copies.forEachIndexed { index, copy ->
-                    if (index > 0) { Spacer(Modifier.height(10.dp)); HorizontalDivider(color = HbLine); Spacer(Modifier.height(10.dp)) }
-                    Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        HomebusterMetaChip(copy.format.ifBlank { "Unknown" })
-                        copy.version?.takeIf { it.isNotBlank() }?.let { HomebusterMetaChip(it, HbAccent) }
+                group.copies.forEach { copy ->
+                    val label = buildString {
+                        append(copy.format.ifBlank { "Unknown" })
+                        copy.version?.takeIf { it.isNotBlank() }?.let { append(" • $it") }
+                        if (copy.loanState != "available") append(" • On loan")
                     }
-                    copy.language?.takeIf { it.isNotBlank() }?.let { Text("Language: $it", color = HbMuted, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp)) }
-                    copy.region?.takeIf { it.isNotBlank() }?.let { Text("Region: $it", color = HbMuted, style = MaterialTheme.typography.bodySmall) }
-                    copy.discCount?.let { Text("Discs: $it", color = HbMuted, style = MaterialTheme.typography.bodySmall) }
-                    copy.upc?.let { Text("UPC: $it", color = HbMuted, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp)) }
+                    if (copy.id == selectedCopy.id) {
+                        Button(onClick = { selectedCopy = copy }, modifier = Modifier.fillMaxWidth()) { Text(label) }
+                    } else {
+                        OutlinedButton(onClick = { selectedCopy = copy }, modifier = Modifier.fillMaxWidth()) { Text(label) }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                }
+                Text("Shelf: $selectedShelfName", color = HbMuted, style = MaterialTheme.typography.bodySmall)
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = { showMore = !showMore }, modifier = Modifier.fillMaxWidth()) {
+                    Text("More Info")
+                }
+                if (showMore) {
+                    Spacer(Modifier.height(10.dp))
+                    Text("Physical metadata", fontWeight = FontWeight.Bold)
+                    selectedCopy.upc?.takeIf { it.isNotBlank() }?.let { Text("UPC: $it", color = HbMuted) }
+                    selectedCopy.version?.takeIf { it.isNotBlank() }?.let { Text("Edition: $it", color = HbMuted) }
+                    selectedCopy.country?.takeIf { it.isNotBlank() }?.let { Text("Country: $it", color = HbMuted) }
+                    selectedCopy.language?.takeIf { it.isNotBlank() }?.let { Text("Language: $it", color = HbMuted) }
+                    selectedCopy.region?.takeIf { it.isNotBlank() }?.let { Text("Region: $it", color = HbMuted) }
+                    selectedCopy.discCount?.let { Text("Disc count: $it", color = HbMuted) }
+                    selectedCopy.tmdbId?.let { Text("TMDb ID: $it", color = HbMuted) }
+                    Text("Status: ${selectedCopy.status}", color = HbMuted)
+                    Text("Loan state: ${selectedCopy.loanState.replace('_', ' ')}", color = HbMuted)
+                    selectedCopy.parentBoxSetName?.let { Text("Box set: $it", color = HbMuted) }
+                    selectedCopy.notes?.takeIf { it.isNotBlank() }?.let {
+                        Spacer(Modifier.height(8.dp))
+                        Text("Notes", fontWeight = FontWeight.Bold)
+                        Text(it, color = HbMuted)
+                    }
+                    if (selectedCopy.overview.isNotBlank()) {
+                        Spacer(Modifier.height(8.dp))
+                        Text("Overview", fontWeight = FontWeight.Bold)
+                        Text(selectedCopy.overview, color = HbMuted)
+                    }
                 }
             }
         }
+
         if (activeLibrary?.role != "viewer") item {
             HomebusterPanel {
                 Text("Edit media", fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
                 OutlinedTextField(editTitle, { editTitle = it }, label = { Text("Title") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(editFormat, { editFormat = it }, label = { Text("Format") }, modifier = Modifier.fillMaxWidth())
-                Button(onClick = { scope.launch { runCatching { api.updateMovie("Bearer $token", movie.id, UpdateMovieRequest(title=editTitle, format=editFormat)) }.onSuccess { actionMessage="Saved" }.onFailure { actionMessage=friendly(it as Exception) } } }, modifier=Modifier.fillMaxWidth()) { Text("Save changes") }
-                Spacer(Modifier.height(12.dp)); Text("Loan media", fontWeight = FontWeight.Bold)
-                OutlinedTextField(borrower, { borrower=it }, label={Text("Borrower name")}, modifier=Modifier.fillMaxWidth())
-                Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    Button(enabled=borrower.isNotBlank(), onClick={ scope.launch { runCatching { api.loanMovie("Bearer $token", movie.id, LoanMovieRequest(borrower)) }.onSuccess { actionMessage="Loan recorded"; borrower="" }.onFailure { actionMessage=friendly(it as Exception) } } }) { Text("Loan") }
-                    OutlinedButton(onClick={ scope.launch { runCatching { api.returnMovie("Bearer $token", movie.id) }.onSuccess { actionMessage="Marked returned" }.onFailure { actionMessage=friendly(it as Exception) } } }) { Text("Return") }
+                Spacer(Modifier.height(8.dp))
+                Box {
+                    OutlinedButton(onClick = { formatMenu = true }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Format: $editFormat")
+                    }
+                    DropdownMenu(expanded = formatMenu, onDismissRequest = { formatMenu = false }) {
+                        formatChoices.forEach { choice ->
+                            DropdownMenuItem(
+                                text = { Text(choice) },
+                                onClick = { editFormat = choice; formatMenu = false }
+                            )
+                        }
+                    }
                 }
-                actionMessage?.let { Text(it, color=HbMuted) }
+                Spacer(Modifier.height(8.dp))
+                Box {
+                    val shelfLabel = shelves.firstOrNull { it.id == editShelfId }?.name ?: "Unassigned"
+                    OutlinedButton(onClick = { shelfMenu = true }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Shelf: $shelfLabel")
+                    }
+                    DropdownMenu(expanded = shelfMenu, onDismissRequest = { shelfMenu = false }) {
+                        DropdownMenuItem(text = { Text("Unassigned") }, onClick = { editShelfId = null; shelfMenu = false })
+                        shelves.forEach { shelf ->
+                            DropdownMenuItem(text = { Text(shelf.name) }, onClick = { editShelfId = shelf.id; shelfMenu = false })
+                        }
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                Button(
+                    enabled = editTitle.isNotBlank(),
+                    onClick = {
+                        scope.launch {
+                            runCatching {
+                                api.updateMovie(
+                                    "Bearer $token",
+                                    selectedCopy.id,
+                                    UpdateMovieRequest(title = editTitle, format = editFormat, shelfId = editShelfId)
+                                )["movie"]!!
+                            }.onSuccess {
+                                selectedCopy = it
+                                actionMessage = "Saved"
+                            }.onFailure { actionMessage = friendly(it as Exception) }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Save changes") }
+                Spacer(Modifier.height(8.dp))
+                Button(onClick = { onLoan(selectedCopy) }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Loan Media")
+                }
+                actionMessage?.let { Spacer(Modifier.height(8.dp)); Text(it, color = HbMuted) }
             }
         }
-        if (movie.overview.isNotBlank()) item { HomebusterPanel { Text("Overview", fontWeight = FontWeight.Bold); Spacer(Modifier.height(6.dp)); Text(movie.overview, color = HbMuted) } }
     }
 }
 
 @Composable
-private fun CollectionsScreen(api: HomebusterApi, token: String, activeLibrary: Library?, onBack: () -> Unit) {
-    val scope=rememberCoroutineScope()
+private fun CollectionsScreen(
+    api: HomebusterApi,
+    token: String,
+    activeLibrary: Library?,
+    onCollection: (CollectionItem) -> Unit,
+    onBack: () -> Unit
+) {
+    val scope = rememberCoroutineScope()
     var newName by remember { mutableStateOf("") }
     var data by remember { mutableStateOf<List<CollectionItem>>(emptyList()) }
     var error by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(Unit) { runCatching { api.collections("Bearer $token").collections }.onSuccess { data = it }.onFailure { error = friendly(it as Exception) } }
+
+    LaunchedEffect(activeLibrary?.id) {
+        runCatching { api.collections("Bearer $token").collections }
+            .onSuccess { all -> data = all.filter { activeLibrary == null || it.libraryId == activeLibrary.id } }
+            .onFailure { error = friendly(it as Exception) }
+    }
+
     LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { HomebusterScreenHeader("Collections", onBack) }
         if (activeLibrary != null && activeLibrary.role != "viewer") item {
             HomebusterPanel {
-                Text("Create collection", fontWeight=FontWeight.Bold)
-                OutlinedTextField(newName,{newName=it},label={Text("Collection name")},modifier=Modifier.fillMaxWidth())
-                Button(enabled=newName.isNotBlank(),onClick={ scope.launch {
-                    runCatching { api.createCollection("Bearer $token",CreateCollectionRequest(activeLibrary.id,newName)) }
-                        .onSuccess { created -> data = data + created["collection"]!!; newName="" }
-                        .onFailure { error=friendly(it as Exception) }
-                }},modifier=Modifier.fillMaxWidth()){Text("Create")}
+                Text("Create collection", fontWeight = FontWeight.Bold)
+                OutlinedTextField(newName, { newName = it }, label = { Text("Collection name") }, modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    enabled = newName.isNotBlank(),
+                    onClick = {
+                        scope.launch {
+                            runCatching { api.createCollection("Bearer $token", CreateCollectionRequest(activeLibrary.id, newName)) }
+                                .onSuccess { created ->
+                                    data = data + created["collection"]!!
+                                    newName = ""
+                                }
+                                .onFailure { error = friendly(it as Exception) }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Create") }
             }
         }
         error?.let { item { HomebusterErrorCard(it) } }
         if (data.isEmpty() && error == null) item { HomebusterEmptyState("No collections yet.") }
-        items(data, key = { it.id }) { c -> HomebusterPanel { Text(c.name, fontWeight = FontWeight.Bold); Text("${c.movieCount} movies", color = HbMuted, style = MaterialTheme.typography.bodySmall) } }
+        items(data, key = { it.id }) { c ->
+            OutlinedButton(onClick = { onCollection(c) }, modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.fillMaxWidth()) {
+                    Text(c.name, fontWeight = FontWeight.Bold)
+                    Text("${c.movieCount} media items", color = HbMuted, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CollectionDetailScreen(
+    api: HomebusterApi,
+    token: String,
+    collection: CollectionItem,
+    onMovie: (MovieGroup) -> Unit,
+    onBack: () -> Unit
+) {
+    var movies by remember { mutableStateOf<List<Movie>>(emptyList()) }
+    var error by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(collection.id) {
+        runCatching { api.collectionMovies("Bearer $token", collection.id).movies }
+            .onSuccess { movies = it }
+            .onFailure { error = friendly(it as Exception) }
+    }
+    val groups = remember(movies) { groupMovies(movies) }
+    Column(Modifier.fillMaxSize()) {
+        Column(Modifier.padding(16.dp)) {
+            HomebusterScreenHeader(collection.name, onBack)
+            error?.let { HomebusterErrorCard(it) }
+        }
+        if (groups.isEmpty() && error == null) {
+            HomebusterEmptyState("No media in this collection.")
+        } else {
+            LazyVerticalGrid(
+                GridCells.Adaptive(155.dp),
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                items(groups, key = { it.key }) { group ->
+                    HomebusterMovieCard(group) { onMovie(group) }
+                }
+            }
+        }
     }
 }
 
@@ -381,7 +571,11 @@ private fun CollectionsScreen(api: HomebusterApi, token: String, activeLibrary: 
 private fun LoansScreen(api: HomebusterApi, token: String, onBack: () -> Unit) {
     var data by remember { mutableStateOf<List<Loan>>(emptyList()) }
     var error by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(Unit) { runCatching { api.loans("Bearer $token").loans }.onSuccess { data = it }.onFailure { error = friendly(it as Exception) } }
+    LaunchedEffect(Unit) {
+        runCatching { api.loans("Bearer $token").loans }
+            .onSuccess { data = it }
+            .onFailure { error = friendly(it as Exception) }
+    }
     LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { HomebusterScreenHeader("Loans", onBack) }
         error?.let { item { HomebusterErrorCard(it) } }
@@ -391,34 +585,215 @@ private fun LoansScreen(api: HomebusterApi, token: String, onBack: () -> Unit) {
                 Text(loan.title, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(4.dp))
                 if (loan.returnedAt == null) Text("Loaned to ${loan.borrower}", color = HbWarning)
-                else Text("Returned", color = HbGood)
+                else Text("Returned ${loan.returnedAt}", color = HbGood)
                 Text("Loaned ${loan.loanedAt}", color = HbMuted, style = MaterialTheme.typography.bodySmall)
+                if (loan.phone.isNotBlank()) Text("Phone: ${loan.phone}", color = HbMuted, style = MaterialTheme.typography.bodySmall)
+                if (loan.notes.isNotBlank()) Text(loan.notes, color = HbMuted, style = MaterialTheme.typography.bodySmall)
             }
         }
     }
 }
 
 @Composable
-private fun MoreScreen(api: HomebusterApi, token: String, libraries: List<Library>, activeLibrary: Library?, onLibrarySelected: (Library)->Unit, onBack:()->Unit) {
+private fun LoanFormScreen(
+    api: HomebusterApi,
+    token: String,
+    movie: Movie,
+    onBack: () -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    var borrower by remember(movie.id) { mutableStateOf("") }
+    var phone by remember(movie.id) { mutableStateOf("") }
+    var loanedDate by remember(movie.id) { mutableStateOf("") }
+    var notes by remember(movie.id) { mutableStateOf("") }
+    var history by remember { mutableStateOf<List<Loan>>(emptyList()) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var message by remember { mutableStateOf<String?>(null) }
+    var refresh by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(movie.id, refresh) {
+        runCatching { api.loans("Bearer $token").loans.filter { it.movieId == movie.id } }
+            .onSuccess { history = it }
+            .onFailure { error = friendly(it as Exception) }
+    }
+    val active = history.firstOrNull { it.returnedAt == null }
+
+    LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item { HomebusterScreenHeader("Loan media", onBack) }
+        item {
+            HomebusterPanel {
+                Text(movie.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text(listOfNotNull(movie.format, movie.version).joinToString(" • "), color = HbMuted)
+                movie.upc?.let { Text("UPC $it", color = HbMuted, style = MaterialTheme.typography.bodySmall) }
+            }
+        }
+        error?.let { item { HomebusterErrorCard(it) } }
+        message?.let { item { HomebusterPanel { Text(it, color = HbGood) } } }
+
+        if (active != null) {
+            item {
+                HomebusterPanel {
+                    Text("Currently on loan", fontWeight = FontWeight.Bold)
+                    Text("Loaned to ${active.borrower}", color = HbWarning)
+                    Text("Date: ${active.loanedAt}", color = HbMuted)
+                    if (active.phone.isNotBlank()) Text("Phone: ${active.phone}", color = HbMuted)
+                    if (active.notes.isNotBlank()) {
+                        Spacer(Modifier.height(6.dp))
+                        Text("Notes", fontWeight = FontWeight.Bold)
+                        Text(active.notes, color = HbMuted)
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                runCatching { api.returnMovie("Bearer $token", movie.id) }
+                                    .onSuccess { message = "Marked returned"; refresh++ }
+                                    .onFailure { error = friendly(it as Exception) }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Mark Returned") }
+                }
+            }
+        } else {
+            item {
+                HomebusterPanel {
+                    Text("Loan details", fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(borrower, { borrower = it }, label = { Text("Loaned to") }, modifier = Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(phone, { phone = it }, label = { Text("Phone (optional)") }, modifier = Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        loanedDate, { loanedDate = it },
+                        label = { Text("Date") },
+                        placeholder = { Text("YYYY-MM-DD • blank = today") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(notes, { notes = it }, label = { Text("Notes (optional)") }, modifier = Modifier.fillMaxWidth(), minLines = 3)
+                    Spacer(Modifier.height(10.dp))
+                    Button(
+                        enabled = borrower.isNotBlank(),
+                        onClick = {
+                            scope.launch {
+                                runCatching {
+                                    api.loanMovie(
+                                        "Bearer $token",
+                                        movie.id,
+                                        LoanMovieRequest(
+                                            borrower = borrower,
+                                            phone = phone.ifBlank { null },
+                                            loanedDate = loanedDate.ifBlank { null },
+                                            notes = notes.ifBlank { null }
+                                        )
+                                    )
+                                }.onSuccess {
+                                    message = "Loan recorded"
+                                    refresh++
+                                }.onFailure { error = friendly(it as Exception) }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Loan Movie") }
+                }
+            }
+        }
+
+        if (history.isNotEmpty()) {
+            item { Text("Loan history", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
+            items(history, key = { it.id }) { loan ->
+                HomebusterPanel {
+                    Text("${loan.borrower} • ${loan.loanedAt}", fontWeight = FontWeight.Bold)
+                    Text(if (loan.returnedAt == null) "Currently out" else "Returned ${loan.returnedAt}", color = HbMuted)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MoreScreen(
+    api: HomebusterApi,
+    token: String,
+    libraries: List<Library>,
+    activeLibrary: Library?,
+    onLibrarySelected: (Library) -> Unit,
+    onShelf: (Shelf) -> Unit,
+    onBack: () -> Unit
+) {
     var shelves by remember { mutableStateOf<List<Shelf>>(emptyList()) }
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(activeLibrary?.id) {
         runCatching { api.shelves("Bearer $token").shelves.filter { activeLibrary == null || it.libraryId == activeLibrary.id } }
-            .onSuccess { shelves=it }.onFailure { error=friendly(it as Exception) }
+            .onSuccess { shelves = it }
+            .onFailure { error = friendly(it as Exception) }
     }
-    LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement=Arrangement.spacedBy(10.dp)) {
-        item { HomebusterScreenHeader("More",onBack) }
-        item { HomebusterPanel {
-            Text("Library",fontWeight=FontWeight.Bold)
-            libraries.forEach { library ->
-                if (library.id == activeLibrary?.id) Button(onClick={},modifier=Modifier.fillMaxWidth()){Text(library.name)}
-                else OutlinedButton(onClick={onLibrarySelected(library)},modifier=Modifier.fillMaxWidth()){Text(library.name)}
+    LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item { HomebusterScreenHeader("More", onBack) }
+        item {
+            HomebusterPanel {
+                Text("Library", fontWeight = FontWeight.Bold)
+                libraries.forEach { library ->
+                    if (library.id == activeLibrary?.id) {
+                        Button(onClick = {}, modifier = Modifier.fillMaxWidth()) { Text(library.name) }
+                    } else {
+                        OutlinedButton(onClick = { onLibrarySelected(library) }, modifier = Modifier.fillMaxWidth()) { Text(library.name) }
+                    }
+                }
             }
-        }}
-        item { Text("Shelves",style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold) }
+        }
+        item { Text("Shelves", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
         error?.let { item { HomebusterErrorCard(it) } }
-        if (shelves.isEmpty() && error==null) item { HomebusterEmptyState("No shelves in this library.") }
-        items(shelves,key={it.id}) { shelf -> HomebusterPanel { Text(shelf.name,fontWeight=FontWeight.Bold); shelf.description?.let { Text(it,color=HbMuted) } } }
+        if (shelves.isEmpty() && error == null) item { HomebusterEmptyState("No shelves in this library.") }
+        items(shelves, key = { it.id }) { shelf ->
+            OutlinedButton(onClick = { onShelf(shelf) }, modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.fillMaxWidth()) {
+                    Text(shelf.name, fontWeight = FontWeight.Bold)
+                    shelf.description?.takeIf { it.isNotBlank() }?.let { Text(it, color = HbMuted) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ShelfDetailScreen(
+    api: HomebusterApi,
+    token: String,
+    shelf: Shelf,
+    onMovie: (MovieGroup) -> Unit,
+    onBack: () -> Unit
+) {
+    var movies by remember { mutableStateOf<List<Movie>>(emptyList()) }
+    var error by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(shelf.id) {
+        runCatching { api.shelfMovies("Bearer $token", shelf.id).movies }
+            .onSuccess { movies = it }
+            .onFailure { error = friendly(it as Exception) }
+    }
+    val groups = remember(movies) { groupMovies(movies) }
+    Column(Modifier.fillMaxSize()) {
+        Column(Modifier.padding(16.dp)) {
+            HomebusterScreenHeader(shelf.name, onBack)
+            shelf.description?.takeIf { it.isNotBlank() }?.let { Text(it, color = HbMuted) }
+            error?.let { HomebusterErrorCard(it) }
+        }
+        if (groups.isEmpty() && error == null) {
+            HomebusterEmptyState("No media on this shelf.")
+        } else {
+            LazyVerticalGrid(
+                GridCells.Adaptive(155.dp),
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                items(groups, key = { it.key }) { group ->
+                    HomebusterMovieCard(group) { onMovie(group) }
+                }
+            }
+        }
     }
 }
 

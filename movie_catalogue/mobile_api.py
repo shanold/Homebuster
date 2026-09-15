@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import secrets
 from functools import wraps
+from datetime import date
 
 from flask import Blueprint, current_app, g, jsonify, request
 from werkzeug.security import check_password_hash
@@ -266,6 +267,25 @@ def shelves():
     return jsonify({"shelves": [dict(r) for r in rows]})
 
 
+@bp.get("/shelves/<int:shelf_id>/movies")
+@token_required
+def shelf_movies(shelf_id):
+    db = get_db()
+    shelf = db.execute("SELECT * FROM shelves WHERE id=?", (shelf_id,)).fetchone()
+    if not shelf:
+        return _json_error("Shelf not found", 404)
+    library, role = _library_role(db, shelf["library_id"], g.api_user["id"])
+    if not library:
+        return _json_error("Shelf not found", 404)
+    rows = db.execute(
+        """SELECT * FROM movies
+           WHERE library_id=? AND shelf_id=? AND parent_box_set_id IS NULL
+           ORDER BY title COLLATE NOCASE, year, id""",
+        (shelf["library_id"], shelf_id),
+    ).fetchall()
+    return jsonify({"shelf": dict(shelf), "movies": [_movie_row(r, db) for r in rows]})
+
+
 @bp.get("/collections")
 @token_required
 def collections():
@@ -489,14 +509,22 @@ def delete_movie_api(movie_id):
 def loan_movie_api(movie_id):
     data=request.get_json(silent=True) or {}; borrower=str(data.get("borrower") or "").strip()
     if not borrower: return _json_error("Borrower name is required")
+    loaned_date = str(data.get("loaned_date") or "").strip() or date.today().isoformat()
+    try:
+        date.fromisoformat(loaned_date)
+    except ValueError:
+        return _json_error("loaned_date must be YYYY-MM-DD")
     db=get_db(); row=db.execute("SELECT * FROM movies WHERE id=?",(movie_id,)).fetchone()
     if not row: return _json_error("Movie not found",404)
     library,role=_library_role(db,row["library_id"],g.api_user["id"])
     if not library or ROLE_LEVEL[role] < ROLE_LEVEL["editor"]: return _json_error("Library is not editable",403)
+    if row["parent_box_set_id"]:
+        whole=db.execute("SELECT id FROM box_set_loans WHERE box_set_id=? AND returned_date IS NULL LIMIT 1",(row["parent_box_set_id"],)).fetchone()
+        if whole: return _json_error("The whole box set is already on loan",409)
     active=db.execute("SELECT id FROM loans WHERE movie_id=? AND returned_date IS NULL",(movie_id,)).fetchone()
     if active: return _json_error("Media is already on loan",409)
-    db.execute("INSERT INTO loans(library_id,movie_id,borrower_name,phone,loaned_date,notes) VALUES(?,?,?,?,date('now'),?)",
-               (row["library_id"],movie_id,borrower,str(data.get("phone") or "").strip() or None,str(data.get("notes") or "").strip() or None))
+    db.execute("INSERT INTO loans(library_id,movie_id,borrower_name,phone,loaned_date,notes) VALUES(?,?,?,?,?,?)",
+               (row["library_id"],movie_id,borrower,str(data.get("phone") or "").strip() or None,loaned_date,str(data.get("notes") or "").strip() or None))
     db.execute("UPDATE movies SET status='loaned',updated_at=CURRENT_TIMESTAMP WHERE id=?",(movie_id,)); db.commit()
     return jsonify({"ok":True}),201
 
@@ -548,7 +576,7 @@ def loans():
     placeholders = ",".join("?" for _ in ids)
     rows = db.execute(
         f"""
-        SELECT l.id,l.movie_id,m.title,l.borrower_name,l.loaned_date,l.returned_date,l.notes
+        SELECT l.id,l.library_id,l.movie_id,m.title,l.borrower_name,l.phone,l.loaned_date,l.returned_date,l.notes
         FROM loans l
         JOIN movies m ON m.id=l.movie_id
         WHERE l.library_id IN ({placeholders})
@@ -560,9 +588,11 @@ def loans():
         "loans": [
             {
                 "id": r["id"],
+                "library_id": r["library_id"],
                 "movie_id": r["movie_id"],
                 "title": r["title"],
                 "borrower": r["borrower_name"],
+                "phone": r["phone"] or "",
                 "loaned_at": r["loaned_date"],
                 "returned_at": r["returned_date"],
                 "notes": r["notes"] or "",

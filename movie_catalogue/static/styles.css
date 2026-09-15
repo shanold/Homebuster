@@ -760,3 +760,6 @@
 @media(max-width:760px){
   .desktop-filmstrip{display:none}
 }
+
+/* v0.3.54 admin form spacing */
+.admin-add-user-card{margin-bottom:24px}

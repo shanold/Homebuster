@@ -18,7 +18,7 @@
     <div class="film-cell film-cell-empty" aria-hidden="true"></div>
     <div class="film-cell film-cell-empty" aria-hidden="true"></div>
     <div class="film-cell film-cell-libraries"><a href="{{ url_for('libraries.index') }}">Libraries</a></div>
-    {% if current_user.is_admin %}<div class="film-cell film-cell-admin"><a href="{{ url_for('admin.users') }}">Site Admin</a></div>{% else %}<div class="film-cell film-cell-empty" aria-hidden="true"></div>{% endif %}
+    {% if current_user.is_admin %}<div class="film-cell film-cell-admin"><a href="{{ url_for('admin.users') }}">Site Admin</a></div>{% endif %}
     <div class="film-cell film-cell-user"><span class="user-chip">{{ current_user.username }}</span></div>
     <div class="film-cell film-cell-logout"><form class="inline" method="post" action="{{ url_for('auth.logout') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

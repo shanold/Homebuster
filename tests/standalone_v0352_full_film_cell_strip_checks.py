@@ -3,7 +3,7 @@ import re
 ROOT=Path(__file__).resolve().parents[1]
 html=(ROOT/"movie_catalogue/templates/base.html").read_text()
 css=(ROOT/"movie_catalogue/static/header.css").read_text()
-assert html.count('class="film-cell film-cell-empty"') == 9, "source must contain 8 admin-path empties plus 1 non-admin fallback"
+assert html.count('class="film-cell film-cell-empty"') == 8, "source must contain 8 decorative empty cells"
 assert 'class="film-cell film-cell-libraries"' in html
 assert 'class="film-cell film-cell-admin"' in html
 assert 'class="film-cell film-cell-user"' in html

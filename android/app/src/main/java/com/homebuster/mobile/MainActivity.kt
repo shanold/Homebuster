@@ -11,6 +11,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
@@ -29,6 +30,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -884,20 +886,20 @@ private fun HomebusterShelfFrontCase(group: MovieGroup, onClick: () -> Unit) {
                     contentAlignment = Alignment.Center
                 ) {
                     Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
-                        if (isUhd) AsyncImage(
-                            model = "https://upload.wikimedia.org/wikipedia/commons/7/71/UHD_Blu-ray_logo.png",
+                        if (isUhd) Image(
+                            painter = painterResource(R.drawable.media_logo_uhd_bluray),
                             contentDescription = "Ultra HD Blu-ray",
                             modifier = Modifier.height(ridgeHeight * .72f).width(ridgeHeight * 1.9f),
                             contentScale = ContentScale.Fit
                         )
-                        if (isBluray) AsyncImage(
-                            model = "https://upload.wikimedia.org/wikipedia/commons/8/8c/Blu_ray_logo.png",
+                        if (isBluray) Image(
+                            painter = painterResource(R.drawable.media_logo_bluray),
                             contentDescription = "Blu-ray Disc",
                             modifier = Modifier.height(ridgeHeight * .72f).width(ridgeHeight * 1.35f),
                             contentScale = ContentScale.Fit
                         )
-                        if (isDvd) AsyncImage(
-                            model = "https://upload.wikimedia.org/wikipedia/commons/7/78/DVD_video_logo.png",
+                        if (isDvd) Image(
+                            painter = painterResource(R.drawable.media_logo_dvd_video),
                             contentDescription = "DVD Video",
                             modifier = Modifier.height(ridgeHeight * .72f).width(ridgeHeight * 1.25f),
                             contentScale = ContentScale.Fit

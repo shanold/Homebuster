@@ -1,5 +1,8 @@
 package com.homebuster.mobile
 
+// Shared presentation components only. Keep inventory/authentication business rules out of
+// reusable Compose widgets so UI restyling cannot accidentally change server semantics.
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable

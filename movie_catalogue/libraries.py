@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+# Library ownership, sharing, settings, transfer, and cross-library organization live here.
+# TV organizer rule: detection is automatic, but moving inventory always requires explicit review.
+# A reviewed TV move preserves the user's physical shelf name instead of forcing re-inventory.
+
 import sqlite3
 
 from flask import Blueprint, flash, redirect, render_template, request, url_for
@@ -223,6 +227,7 @@ def delete(library_id, library, role):
 @login_required
 @require_library_role("owner")
 def tv_move_review(library_id, library, role):
+    # Review is read-only: merely detecting TV rows must never reorganize inventory.
     db = get_db()
     tv_items = db.execute(
         """SELECT m.id,m.title,m.year,m.poster_path,m.shelf_id,s.name AS shelf_name
@@ -263,6 +268,8 @@ def tv_move_apply(library_id, library, role):
         return redirect(url_for("libraries.tv_move_review", library_id=library_id))
 
     placeholders = ",".join("?" for _ in selected_movie_ids)
+    # Re-query the submitted IDs under the source-library + media_type constraints.
+    # This prevents stale/tampered checkbox values from moving unrelated inventory.
     rows = db.execute(
         f"""SELECT m.id,m.shelf_id,s.name AS shelf_name,s.description,s.sort_order
             FROM movies m LEFT JOIN shelves s ON s.id=m.shelf_id
@@ -272,6 +279,8 @@ def tv_move_apply(library_id, library, role):
     moved = 0
     for item in rows:
         destination_shelf_id = None
+        # Shelves are library-scoped, so preserve location by name and create the
+        # equivalent destination shelf only when it does not already exist.
         if item["shelf_id"] and item["shelf_name"]:
             existing = db.execute(
                 "SELECT id FROM shelves WHERE library_id=? AND name=? COLLATE NOCASE",

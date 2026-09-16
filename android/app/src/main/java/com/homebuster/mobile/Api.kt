@@ -1,5 +1,10 @@
 package com.homebuster.mobile
 
+// API contract mirror:
+// These DTOs intentionally follow the server's /api/v1 JSON names. Business rules stay on
+// the Flask server; Android should send user intent and render the authoritative response.
+// Movie.id is always a real physical inventory-row ID, never a grouped-title synthetic ID.
+
 import com.google.gson.annotations.SerializedName
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit

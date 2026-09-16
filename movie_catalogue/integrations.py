@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+# External-service boundary. Keep provider URLs, credentials, timeouts, and response adaptation
+# here so feature modules can work with Homebuster-shaped data instead of provider-specific JSON.
+# API keys are server configuration and must never be pushed into the Android client.
+
 import requests
 from flask import current_app
 

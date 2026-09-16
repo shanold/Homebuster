@@ -1,5 +1,8 @@
 package com.homebuster.mobile
 
+// Camera scanning is intentionally thin: capture a barcode, return its value, and let the
+// Homebuster server perform UPC lookup, title parsing, TMDb matching, and permission checks.
+
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult

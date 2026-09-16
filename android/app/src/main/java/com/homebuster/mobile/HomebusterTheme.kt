@@ -1,5 +1,8 @@
 package com.homebuster.mobile
 
+// Central visual theme for the Android client. Feature-specific layout belongs with its screen;
+// global colors/typography that should move together belong here.
+
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme

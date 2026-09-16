@@ -11,6 +11,8 @@ Libraries can now choose a default content type: Movies, TV Shows, or Movie Coll
 
 # Homebuster
 
+> Maintainers and code reviewers: start with [`DEVELOPER.md`](DEVELOPER.md) for the architecture, database, security boundaries, and feature map.
+
 A community fork/rework of [TheMarveled/movie-cataloguer](https://github.com/TheMarveled/movie-cataloguer), focused on self-hosted personal and shared physical movie collections.
 
 The original project is MIT licensed. This fork keeps the physical-media catalogue idea and core movie metadata while adding accounts, private/shared Libraries, permissions, Shelves, and Loans.

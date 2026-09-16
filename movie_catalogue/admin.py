@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+# Site-admin tools manage user accounts, not the contents of arbitrary private libraries.
+# Destructive account flows include ownership protections/transfers and database backups.
+
 from functools import wraps
 
 from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for

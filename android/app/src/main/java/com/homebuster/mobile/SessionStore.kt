@@ -1,5 +1,9 @@
 package com.homebuster.mobile
 
+// Persist only connection/session preferences here; business data remains server-authoritative.
+// The server URL and bearer token are encrypted with an Android-Keystore-backed AES key. Small
+// non-secret UI preferences (such as shelf view mode) can remain ordinary SharedPreferences.
+
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties

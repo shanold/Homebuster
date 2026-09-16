@@ -11,7 +11,7 @@ assert 'Text("Blu-ray Disc"' not in case
 assert 'Text("Ultra HD Blu-ray"' not in case
 cfg=(R/"movie_catalogue/config.py").read_text()
 g=(R/"android/app/build.gradle.kts").read_text()
-assert 'APP_VERSION = "0.3.72"' in cfg
-assert 'versionName = "0.3.40"' in g
-assert 'versionCode = 32' in g
+assert 'APP_VERSION = "0.3.73"' in cfg
+assert 'versionName = "0.3.41"' in g
+assert 'versionCode = 33' in g
 print("v0.3.68 real media-logo checks: PASS")

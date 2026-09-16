@@ -1,4 +1,8 @@
 from __future__ import annotations
+
+# Smart Collections never invent membership from titles; TMDb collection identity is authoritative.
+# Cache/backfill limits in this module are also a request-budget: TMDb enrichment must never
+# turn opening the Collections page into an unbounded provider crawl.
 from datetime import date, datetime, timezone
 
 REFRESH_HOURS = 24

@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+# Mobile API security model:
+# Android sends an opaque bearer token; only its SHA-256 hash is stored in SQLite.
+# Each protected request re-checks disabled/auth_version state and library role before mutation.
+# API objects use real physical movie IDs; grouped Android cards are a presentation concern.
+
 import hashlib
 import secrets
 from functools import wraps

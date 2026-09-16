@@ -1,3 +1,4 @@
+/* Header isolation: this file intentionally loads after styles.css so filmstrip/header rules do not compete with historical global navigation CSS. */
 /* Homebuster v0.3.51 header: authoritative rules loaded after legacy styles.css. */
 @media (min-width:761px){
   .topbar{

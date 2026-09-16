@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+# Product titles are noisy. This parser separates searchable title identity from copy metadata
+# such as DVD/Blu-ray/4K, edition text, language, region, and disc-count hints.
+# Favor conservative transformations: a weaker search candidate is safer than deleting words
+# that are actually part of the movie or TV title.
+
 from dataclasses import dataclass
 from datetime import datetime
 from difflib import SequenceMatcher

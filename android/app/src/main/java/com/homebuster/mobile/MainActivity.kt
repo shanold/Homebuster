@@ -1,5 +1,10 @@
 package com.homebuster.mobile
 
+// Navigation/state map:
+// HomebusterApp owns connection/authentication state plus the currently selected library/item.
+// Individual screens receive real server DTOs and callbacks rather than maintaining a second
+// inventory database. detailsReturnScreen preserves the context a detail screen was opened from.
+
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build

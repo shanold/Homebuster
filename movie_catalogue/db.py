@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+# Schema map:
+# users -> libraries -> movies/box_sets/shelves/loans, with library_members providing
+# shared access. Collections organize movies; parent_box_set_id models contained films.
+# Startup migrations below are intentionally idempotent because installs upgrade in place.
+
 import os
 import sqlite3
 from datetime import datetime

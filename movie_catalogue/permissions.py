@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+# Library access is role-based and is checked again on each protected request.
+# Never treat a hidden browser/Android control as authorization; server-side role checks
+# are the actual boundary. Site-admin status is intentionally separate from library access.
+
 from functools import wraps
 
 from flask import abort

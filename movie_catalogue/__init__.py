@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+# Application wiring lives here. Feature behavior belongs in blueprints/services so the
+# app factory remains a readable map of Homebuster's security and request boundaries.
+# Security boundary: browser sessions and API bearer tokens are deliberately separate.
+
 import logging
 import secrets
 from pathlib import Path

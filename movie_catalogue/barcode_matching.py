@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+# Shared barcode-to-TMDb matching logic used by both web and mobile flows.
+# Keep product-title cleanup in barcode_parser.py and provider I/O in integrations.py so
+# browser and Android identification cannot quietly drift into different algorithms.
+
 from .integrations import tmdb_search
 from .barcode_parser import best_match_score, infer_copy_metadata_from_legacy_title, rank_tmdb_results, search_ready_title_candidates
 

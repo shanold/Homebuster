@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+# Browser controller for physical box sets. Reusable loan/conflict/creation rules belong in
+# box_set_service.py rather than being duplicated here or in the mobile API.
+
 import csv
 import io
 from datetime import date

@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+# Browser authentication uses Flask-Login sessions. auth_version is copied into the session
+# at login and allows password resets/account changes to invalidate older authentication.
+# Error messages intentionally avoid revealing whether a username exists.
+
 import re
 import sqlite3
 

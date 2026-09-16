@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+# Shared physical-box-set business rules. Browser and mobile routes should call this service
+# for creation and loan-state decisions so whole-set and individual-member rules stay identical.
+# Contained films are first-class movies linked to a physical parent via parent_box_set_id.
+
 from datetime import date
 
 from .smart_collections import sync_physical_box_set_collection

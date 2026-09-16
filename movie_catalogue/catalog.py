@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+# Catalog responsibilities:
+# - physical media CRUD and display grouping
+# - title identification and barcode/TMDb review
+# - shelves, loans, organizational collections, CSV, and bulk match repair
+# Physical copies remain separate database rows even when the UI groups them by title.
+
 import csv
 import io
 from datetime import date

@@ -580,30 +580,15 @@ private fun CollectionDetailScreen(
         if (groups.isEmpty() && error == null) {
             HomebusterEmptyState("No media in this collection.")
         } else {
-            if (shelfViewMode == ShelfViewMode.FRONT) {
-                LazyVerticalGrid(
-                    GridCells.Adaptive(145.dp),
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 24.dp),
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(18.dp)
-                ) {
-                    items(groups, key = { it.key }) { group ->
-                        HomebusterShelfFrontCase(group) { onMovie(group) }
-                    }
-                }
-            } else {
-                LazyVerticalGrid(
-                    GridCells.Adaptive(48.dp),
-                    modifier = Modifier.fillMaxSize()
-                        .background(Brush.verticalGradient(listOf(Color(0xFF24170F), Color(0xFF5A3822), Color(0xFF21140D)))),
-                    contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 14.dp, bottom = 24.dp),
-                    horizontalArrangement = Arrangement.spacedBy(3.dp),
-                    verticalArrangement = Arrangement.spacedBy(18.dp)
-                ) {
-                    items(groups, key = { it.key }) { group ->
-                        HomebusterShelfSpine(group) { onMovie(group) }
-                    }
+            LazyVerticalGrid(
+                GridCells.Adaptive(155.dp),
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                items(groups, key = { it.key }) { group ->
+                    HomebusterMovieCard(group) { onMovie(group) }
                 }
             }
         }
@@ -974,16 +959,30 @@ private fun ShelfDetailScreen(
         if (groups.isEmpty() && error == null) {
             HomebusterEmptyState("No media on this shelf.")
         } else {
-            LazyVerticalGrid(
-                GridCells.Adaptive(48.dp),
-                modifier = Modifier.fillMaxSize()
-                    .background(Brush.verticalGradient(listOf(Color(0xFF24170F), Color(0xFF5A3822), Color(0xFF21140D)))),
-                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 14.dp, bottom = 24.dp),
-                horizontalArrangement = Arrangement.spacedBy(3.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp)
-            ) {
-                items(groups, key = { it.key }) { group ->
-                    HomebusterShelfCase(group) { onMovie(group) }
+            if (shelfViewMode == ShelfViewMode.FRONT) {
+                LazyVerticalGrid(
+                    GridCells.Adaptive(145.dp),
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 24.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(18.dp)
+                ) {
+                    items(groups, key = { it.key }) { group ->
+                        HomebusterShelfFrontCase(group) { onMovie(group) }
+                    }
+                }
+            } else {
+                LazyVerticalGrid(
+                    GridCells.Adaptive(48.dp),
+                    modifier = Modifier.fillMaxSize()
+                        .background(Brush.verticalGradient(listOf(Color(0xFF24170F), Color(0xFF5A3822), Color(0xFF21140D)))),
+                    contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 14.dp, bottom = 24.dp),
+                    horizontalArrangement = Arrangement.spacedBy(3.dp),
+                    verticalArrangement = Arrangement.spacedBy(18.dp)
+                ) {
+                    items(groups, key = { it.key }) { group ->
+                        HomebusterShelfSpine(group) { onMovie(group) }
+                    }
                 }
             }
         }

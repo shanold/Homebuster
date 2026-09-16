@@ -806,33 +806,34 @@ private fun MoreScreen(
 private fun HomebusterShelfFrontCase(group: MovieGroup, onClick: () -> Unit) {
     val movie = group.primary
     val format = movie.format.ifBlank { "Media" }
-    val plastic = when (format) {
-        "Blu-ray", "Blu-ray + DVD" -> Color(0xFF176CC0)
-        "4K", "4K UHD" -> Color(0xFF17191E)
-        "HD DVD" -> Color(0xFF8E2025)
-        "VHS" -> Color(0xFF292929)
-        "DVD" -> Color(0xFF252A31)
-        else -> Color(0xFF39414D)
-    }
-    val glow = when (format) {
-        "Blu-ray", "Blu-ray + DVD" -> Color(0xFF55A9EF)
-        "4K", "4K UHD" -> Color(0xFF62666E)
-        "HD DVD" -> Color(0xFFD24A50)
-        else -> Color(0xFF737E8E)
+    val (casePlasticDark, casePlastic, caseGlow) = when (format) {
+        "Blu-ray", "Blu-ray + DVD" -> Triple(Color(0xFF0B3767), Color(0xFF176CC0), Color(0xFF55A9EF))
+        "4K", "4K UHD" -> Triple(Color(0xFF020303), Color(0xFF151719), Color(0xFF34383C))
+        "DVD", "HD DVD", "VHS" -> Triple(Color(0xFF08090B), Color(0xFF25272B), Color(0xFF50545A))
+        else -> Triple(Color(0xFF15191F), Color(0xFF414956), Color(0xFF687384))
     }
     Column(
         Modifier.fillMaxWidth().clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
-            Modifier.fillMaxWidth().aspectRatio(0.67f)
-                .graphicsLayer { shadowElevation = 10f }
-                .clip(RoundedCornerShape(9.dp))
-                .background(Brush.horizontalGradient(listOf(plastic, glow, plastic)))
-                .padding(start = 7.dp, end = 7.dp, top = 27.dp, bottom = 9.dp)
+            Modifier.fillMaxWidth()
+                .graphicsLayer { shadowElevation = 18f }
+                .clip(RoundedCornerShape(12.dp, 12.dp, 8.dp, 8.dp))
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(casePlasticDark, casePlastic, caseGlow, casePlastic, casePlasticDark)
+                    )
+                )
+                .padding(top = 43.dp, horizontal = 10.dp, bottom = 13.dp)
         ) {
+            HomebusterCaseTopRidge()
+            HomebusterCaseHinge()
             Box(
-                Modifier.matchParentSize().clip(RoundedCornerShape(2.dp)).background(Color(0xFF111318)),
+                Modifier.fillMaxWidth()
+                    .padding(3.dp)
+                    .background(Color(0xFF09101A))
+                    .aspectRatio(2f / 3f),
                 contentAlignment = Alignment.Center
             ) {
                 if (movie.posterUrl != null) {
@@ -843,20 +844,67 @@ private fun HomebusterShelfFrontCase(group: MovieGroup, onClick: () -> Unit) {
                         contentScale = ContentScale.Crop
                     )
                 } else {
-                    Text("🎬", style = MaterialTheme.typography.headlineLarge)
+                    Text("🎬", style = MaterialTheme.typography.headlineLarge, color = Color(0xFF68758D))
                 }
             }
-            Box(
-                Modifier.align(Alignment.TopCenter).offset(y = (-24).dp).fillMaxWidth().height(21.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(format.uppercase(), color = Color.White, fontWeight = FontWeight.Black, style = MaterialTheme.typography.labelSmall)
-            }
+            HomebusterCaseFormatLogo(format)
+            HomebusterCasePlasticOverlay()
         }
         Spacer(Modifier.height(6.dp))
         Text(movie.title, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
         movie.year?.let { Text(it.toString(), color = HbMuted, style = MaterialTheme.typography.bodySmall) }
     }
+}
+
+@Composable
+private fun BoxScope.HomebusterCaseTopRidge() {
+    Box(
+        Modifier.align(Alignment.TopCenter)
+            .offset(y = (-36).dp)
+            .fillMaxWidth()
+            .height(29.dp)
+            .clip(RoundedCornerShape(7.dp, 7.dp, 3.dp, 3.dp))
+            .background(Brush.verticalGradient(listOf(Color(0x38FFFFFF), Color(0x08FFFFFF), Color(0x16000000), Color.Transparent)))
+    )
+}
+
+@Composable
+private fun BoxScope.HomebusterCaseHinge() {
+    Box(
+        Modifier.align(Alignment.CenterStart)
+            .offset(x = (-6).dp)
+            .width(5.dp)
+            .fillMaxHeight()
+            .clip(RoundedCornerShape(4.dp))
+            .background(Brush.horizontalGradient(listOf(Color(0x70000000), Color(0x42FFFFFF), Color(0x50000000))))
+    )
+}
+
+@Composable
+private fun BoxScope.HomebusterCaseFormatLogo(format: String) {
+    Box(
+        Modifier.align(Alignment.TopCenter)
+            .offset(y = (-37).dp)
+            .fillMaxWidth()
+            .height(27.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            format.uppercase(),
+            color = Color(0xFFF4F5F6),
+            fontWeight = FontWeight.Black,
+            style = MaterialTheme.typography.labelMedium
+        )
+    }
+}
+
+@Composable
+private fun BoxScope.HomebusterCasePlasticOverlay() {
+    Box(
+        Modifier.matchParentSize()
+            .clip(RoundedCornerShape(12.dp, 12.dp, 8.dp, 8.dp))
+            .background(Brush.verticalGradient(listOf(Color(0x12FFFFFF), Color.Transparent, Color(0x30000000))))
+    )
 }
 
 @Composable

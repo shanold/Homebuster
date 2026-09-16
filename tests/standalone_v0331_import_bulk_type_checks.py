@@ -38,5 +38,5 @@ assert (
     or 'stored_media_type = _media_type(movie["media_type"]' in CATALOG
 )
 
-assert any(v in CONFIG for v in ('APP_VERSION = "0.3.31"', 'APP_VERSION = "0.3.32"', 'APP_VERSION = "0.3.33"', 'APP_VERSION = "0.3.34"','APP_VERSION = "0.3.35"', 'APP_VERSION = "0.3.36"', 'APP_VERSION = "0.3.37"', 'APP_VERSION = "0.3.38"', 'APP_VERSION = "0.3.39"', 'APP_VERSION = "0.3.40"', 'APP_VERSION = "0.3.41"'))
+assert any(v in CONFIG for v in ('APP_VERSION = "0.3.65"', 'APP_VERSION = "0.3.65"', 'APP_VERSION = "0.3.65"', 'APP_VERSION = "0.3.65"','APP_VERSION = "0.3.65"', 'APP_VERSION = "0.3.65"', 'APP_VERSION = "0.3.65"', 'APP_VERSION = "0.3.65"', 'APP_VERSION = "0.3.65"', 'APP_VERSION = "0.3.65"', 'APP_VERSION = "0.3.65"'))
 print('v0.3.31 import hub + bulk TMDb type checks passed')

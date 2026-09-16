@@ -4,7 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 tpl = (ROOT / 'movie_catalogue/templates/shelf_detail.html').read_text()
 config = (ROOT / 'movie_catalogue/config.py').read_text()
 
-assert any(v in config for v in ('APP_VERSION = "0.3.71"', 'APP_VERSION = "0.3.71"', 'APP_VERSION = "0.3.71"', 'APP_VERSION = "0.3.71"')), 'server version not bumped'
+assert any(v in config for v in ('APP_VERSION = "0.3.72"', 'APP_VERSION = "0.3.72"', 'APP_VERSION = "0.3.72"', 'APP_VERSION = "0.3.72"')), 'server version not bumped'
 for url in (
     'https://upload.wikimedia.org/wikipedia/commons/1/14/Blu-ray_Disc.svg',
     'https://upload.wikimedia.org/wikipedia/commons/e/e7/DVD-Video_Logo.svg',

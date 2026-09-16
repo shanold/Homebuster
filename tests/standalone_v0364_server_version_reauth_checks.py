@@ -10,7 +10,7 @@ assert "api.status()" in m
 assert "currentStatus.serverVersion != savedVersion" in m
 assert "Homebuster server was updated" in m
 assert "store.clearToken()" in m
-assert 'APP_VERSION = "0.3.71"' in cfg
-assert 'versionName = "0.3.39"' in gradle
-assert 'versionCode = 31' in gradle
+assert 'APP_VERSION = "0.3.72"' in cfg
+assert 'versionName = "0.3.40"' in gradle
+assert 'versionCode = 32' in gradle
 print("v0.3.64 server-version reauth checks: PASS")

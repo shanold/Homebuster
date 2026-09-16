@@ -218,3 +218,79 @@ def delete(library_id, library, role):
     db = get_db(); db.execute("DELETE FROM libraries WHERE id=?", (library_id,)); db.commit()
     flash("Library deleted.", "success")
     return redirect(url_for("libraries.index"))
+
+@bp.get("/<int:library_id>/tv-move-review")
+@login_required
+@require_library_role("owner")
+def tv_move_review(library_id, library, role):
+    db = get_db()
+    tv_items = db.execute(
+        """SELECT m.id,m.title,m.year,m.poster_path,m.shelf_id,s.name AS shelf_name
+           FROM movies m LEFT JOIN shelves s ON s.id=m.shelf_id
+           WHERE m.library_id=? AND m.media_type='tv' AND m.parent_box_set_id IS NULL
+           ORDER BY m.title COLLATE NOCASE,m.year,m.id""", (library_id,)
+    ).fetchall()
+    destinations = db.execute(
+        "SELECT id,name FROM libraries WHERE owner_id=? AND id<>? ORDER BY name COLLATE NOCASE",
+        (current_user.id, library_id),
+    ).fetchall()
+    return render_template("tv_move_review.html", library=library, tv_items=tv_items, destinations=destinations)
+
+
+@bp.post("/<int:library_id>/tv-move-review")
+@login_required
+@require_library_role("owner")
+def tv_move_apply(library_id, library, role):
+    db = get_db()
+    try:
+        destination_library_id = int(request.form.get("destination_library_id") or 0)
+    except ValueError:
+        destination_library_id = 0
+    destination = db.execute(
+        "SELECT id,name FROM libraries WHERE id=? AND owner_id=? AND id<>?",
+        (destination_library_id, current_user.id, library_id),
+    ).fetchone()
+    if not destination:
+        flash("Choose one of your other Libraries as the destination.", "error")
+        return redirect(url_for("libraries.tv_move_review", library_id=library_id))
+
+    selected_movie_ids = []
+    for raw in request.form.getlist("movie_id"):
+        try: selected_movie_ids.append(int(raw))
+        except ValueError: pass
+    if not selected_movie_ids:
+        flash("Select at least one detected TV show to move.", "warning")
+        return redirect(url_for("libraries.tv_move_review", library_id=library_id))
+
+    placeholders = ",".join("?" for _ in selected_movie_ids)
+    rows = db.execute(
+        f"""SELECT m.id,m.shelf_id,s.name AS shelf_name,s.description,s.sort_order
+            FROM movies m LEFT JOIN shelves s ON s.id=m.shelf_id
+            WHERE m.library_id=? AND m.media_type='tv' AND m.id IN ({placeholders})""",
+        (library_id, *selected_movie_ids),
+    ).fetchall()
+    moved = 0
+    for item in rows:
+        destination_shelf_id = None
+        if item["shelf_id"] and item["shelf_name"]:
+            existing = db.execute(
+                "SELECT id FROM shelves WHERE library_id=? AND name=? COLLATE NOCASE",
+                (destination_library_id, item["shelf_name"]),
+            ).fetchone()
+            if existing:
+                destination_shelf_id = existing["id"]
+            else:
+                cur = db.execute(
+                    "INSERT INTO shelves (library_id,name,description,sort_order) VALUES (?,?,?,?)",
+                    (destination_library_id, item["shelf_name"], item["description"], item["sort_order"]),
+                )
+                destination_shelf_id = cur.lastrowid
+        db.execute("UPDATE movies SET library_id=?, shelf_id=? WHERE id=? AND library_id=? AND media_type='tv'",
+                   (destination_library_id, destination_shelf_id, item["id"], library_id))
+        # Keep the title's loans/history internally consistent with its new Library.
+        db.execute("UPDATE loans SET library_id=? WHERE movie_id=? AND library_id=?",
+                   (destination_library_id, item["id"], library_id))
+        moved += 1
+    db.commit()
+    flash(f"Moved {moved} selected TV {'title' if moved == 1 else 'titles'} to {destination['name']}. Shelf locations were preserved.", "success")
+    return redirect(url_for("libraries.tv_move_review", library_id=library_id))

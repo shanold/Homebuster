@@ -1,0 +1,13 @@
+{% extends 'base.html' %}{% block content %}{% include '_library_nav.html' %}
+<div class="page-heading"><div><h2>TV Move Review</h2><p>Homebuster detected TV shows in {{ library.name }}. Detection is automatic; nothing moves until you select it and approve the move.</p></div></div>
+<section class="panel">
+{% if not destinations %}<p>Create another Library first, then return here to choose it as the destination.</p>
+{% elif not tv_items %}<p>No confidently identified TV shows were found in this Library.</p>
+{% else %}
+<form method="post" class="stack"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<label>Destination Library<select name="destination_library_id" required><option value="">Choose a Library…</option>{% for d in destinations %}<option value="{{ d.id }}">{{ d.name }}</option>{% endfor %}</select></label>
+<div class="row-actions"><button type="button" class="secondary" onclick="document.querySelectorAll('.tv-move-check').forEach(x=>x.checked=true)">Select All</button><button type="button" class="secondary" onclick="document.querySelectorAll('.tv-move-check').forEach(x=>x.checked=false)">Select None</button></div>
+<div class="movie-grid">{% for item in tv_items %}<label class="movie-card"><input class="tv-move-check" type="checkbox" name="movie_id" value="{{ item.id }}" checked>{% if item.poster_path %}<img src="https://image.tmdb.org/t/p/w342{{ item.poster_path }}" alt="">{% endif %}<strong>{{ item.title }}</strong>{% if item.year %}<span>{{ item.year }}</span>{% endif %}<span>Current shelf: {{ item.shelf_name or 'Unassigned' }}</span></label>{% endfor %}</div>
+<div class="notice"><strong>Review before moving:</strong> only the checked TV titles will move. Their existing shelf names are preserved in the destination Library.</div>
+<button class="primary" type="submit">Move Selected</button>
+</form>{% endif %}</section>{% endblock %}

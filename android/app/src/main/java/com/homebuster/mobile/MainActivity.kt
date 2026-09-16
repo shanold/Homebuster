@@ -10,6 +10,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -19,9 +22,15 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
@@ -553,14 +562,15 @@ private fun CollectionDetailScreen(
             HomebusterEmptyState("No media in this collection.")
         } else {
             LazyVerticalGrid(
-                GridCells.Adaptive(155.dp),
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                GridCells.Adaptive(48.dp),
+                modifier = Modifier.fillMaxSize()
+                    .background(Brush.verticalGradient(listOf(Color(0xFF24170F), Color(0xFF5A3822), Color(0xFF21140D)))),
+                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 14.dp, bottom = 24.dp),
+                horizontalArrangement = Arrangement.spacedBy(3.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp)
             ) {
                 items(groups, key = { it.key }) { group ->
-                    HomebusterMovieCard(group) { onMovie(group) }
+                    HomebusterShelfCase(group) { onMovie(group) }
                 }
             }
         }
@@ -758,6 +768,81 @@ private fun MoreScreen(
 }
 
 @Composable
+private fun HomebusterShelfCase(group: MovieGroup, onClick: () -> Unit) {
+    val movie = group.primary
+    val format = movie.format.ifBlank { "Media" }
+    val caseColor = when (format) {
+        "Blu-ray", "Blu-ray + DVD" -> Color(0xFF176CC0)
+        "4K", "4K UHD" -> Color(0xFF17191E)
+        "HD DVD" -> Color(0xFF8E2025)
+        "VHS" -> Color(0xFF292929)
+        "DVD" -> Color(0xFF20252C)
+        else -> Color(0xFF39414D)
+    }
+    val caseHighlight = when (format) {
+        "Blu-ray", "Blu-ray + DVD" -> Color(0xFF55A9EF)
+        "4K", "4K UHD" -> Color(0xFF5B5F67)
+        "HD DVD" -> Color(0xFFD24A50)
+        else -> Color(0xFF737E8E)
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(206.dp)
+            .padding(bottom = 4.dp)
+            .graphicsLayer { shadowElevation = 7f }
+            .clip(RoundedCornerShape(3.dp))
+            .background(Brush.horizontalGradient(listOf(caseColor, caseHighlight, caseColor)))
+            .clickable(onClick = onClick)
+    ) {
+        movie.posterUrl?.let { poster ->
+            AsyncImage(
+                model = poster,
+                contentDescription = null,
+                modifier = Modifier.matchParentSize(),
+                contentScale = ContentScale.Crop,
+                alpha = 0.38f
+            )
+        }
+        Box(
+            Modifier.matchParentSize().background(
+                Brush.horizontalGradient(
+                    listOf(Color(0xB0000000), Color(0x18000000), Color(0x90000000))
+                )
+            )
+        )
+        Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(
+                Modifier.fillMaxWidth().height(19.dp).background(caseColor),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    format.uppercase(),
+                    color = Color.White,
+                    fontWeight = FontWeight.Black,
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Clip
+                )
+            }
+            Spacer(Modifier.height(7.dp))
+            Text(
+                movie.title,
+                modifier = Modifier
+                    .weight(1f)
+                    .graphicsLayer { rotationZ = 90f },
+                color = Color.White,
+                fontWeight = FontWeight.Black,
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
 private fun ShelfDetailScreen(
     api: HomebusterApi,
     token: String,
@@ -783,14 +868,15 @@ private fun ShelfDetailScreen(
             HomebusterEmptyState("No media on this shelf.")
         } else {
             LazyVerticalGrid(
-                GridCells.Adaptive(155.dp),
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                GridCells.Adaptive(48.dp),
+                modifier = Modifier.fillMaxSize()
+                    .background(Brush.verticalGradient(listOf(Color(0xFF24170F), Color(0xFF5A3822), Color(0xFF21140D)))),
+                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 14.dp, bottom = 24.dp),
+                horizontalArrangement = Arrangement.spacedBy(3.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp)
             ) {
                 items(groups, key = { it.key }) { group ->
-                    HomebusterMovieCard(group) { onMovie(group) }
+                    HomebusterShelfCase(group) { onMovie(group) }
                 }
             }
         }

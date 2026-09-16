@@ -104,6 +104,22 @@ fun HomebusterApp(store: SessionStore) {
 
     LaunchedEffect(api, token) {
         if (api != null && token != null) {
+            val savedVersion = store.lastServerVersion
+            val statusResult = runCatching { api.status() }
+            val currentStatus = statusResult.getOrNull()
+            if (currentStatus != null) {
+                serverVersion = currentStatus.serverVersion
+                if (savedVersion != null && currentStatus.serverVersion != savedVersion) {
+                    store.clearToken()
+                    token = null
+                    libraries = emptyList()
+                    activeLibraryId = null
+                    loginMessage = "Homebuster server was updated from v$savedVersion to v${currentStatus.serverVersion}. Please sign in again."
+                    screen = Screen.LOGIN
+                    return@LaunchedEffect
+                }
+                if (savedVersion == null) store.lastServerVersion = currentStatus.serverVersion
+            }
             runCatching { api.libraries("Bearer $token").libraries }.onSuccess { loaded ->
                 libraries = loaded
                 if (activeLibraryId == null || loaded.none { it.id == activeLibraryId }) {
@@ -139,6 +155,7 @@ fun HomebusterApp(store: SessionStore) {
                 server = normalizedServer
                 token = newToken
                 serverVersion = detectedVersion
+                store.lastServerVersion = detectedVersion
                 loginMessage = null
                 screen = Screen.LIBRARY
             }

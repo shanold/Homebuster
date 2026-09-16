@@ -78,6 +78,14 @@ class SessionStore(context: Context) {
         get() = prefs.getString("shelf_view_mode", "front") ?: "front"
         set(value) = prefs.edit().putString("shelf_view_mode", value).apply()
 
+    var lastServerVersion: String?
+        get() = prefs.getString("last_server_version", null)
+        set(value) {
+            val editor = prefs.edit()
+            if (value == null) editor.remove("last_server_version") else editor.putString("last_server_version", value)
+            editor.apply()
+        }
+
     fun clear() {
         clearToken()
     }

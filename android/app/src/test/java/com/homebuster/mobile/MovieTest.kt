@@ -5,7 +5,21 @@ import org.junit.Test
 
 class MovieTest {
     @Test fun posterUrlUsesTmdbImageHost() {
-        val m = Movie(1,1,null,2,"Alien",1979,"","/abc.jpg",117,"Blu-ray",null,false)
+        val m = Movie(
+            id = 1,
+            libraryId = 1,
+            shelfId = null,
+            tmdbId = 2,
+            mediaType = "movie",
+            title = "Alien",
+            year = 1979,
+            overview = "",
+            posterPath = "/abc.jpg",
+            runtime = 117,
+            format = "Blu-ray",
+            upc = null,
+            watched = false
+        )
         assertEquals("https://image.tmdb.org/t/p/w500/abc.jpg", m.posterUrl)
     }
 }

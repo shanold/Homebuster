@@ -886,26 +886,28 @@ private fun HomebusterShelfFrontCase(group: MovieGroup, onClick: () -> Unit) {
                         .height(ridgeHeight),
                     contentAlignment = Alignment.Center
                 ) {
-                    val logoHeight = ridgeHeight * .90f
+                    val singleLogoHeight = ridgeHeight * .96f
+                    val comboLogoHeight = ridgeHeight * .88f
+                    val logoHeight = if ((if (isUhd) 1 else 0) + (if (isBluray) 1 else 0) + (if (isDvd) 1 else 0) > 1) comboLogoHeight else singleLogoHeight
                     Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
                         if (isUhd) Image(
                             painter = painterResource(R.drawable.media_logo_uhd_bluray),
                             contentDescription = "Ultra HD Blu-ray",
-                            modifier = Modifier.height(logoHeight).width(logoHeight * 2.65f).graphicsLayer { alpha = .98f },
+                            modifier = Modifier.height(if (isBluray || isDvd) comboLogoHeight else singleLogoHeight).width(logoHeight * 2.9f).graphicsLayer { alpha = .98f },
                             contentScale = ContentScale.Fit,
                             colorFilter = ColorFilter.tint(Color.White)
                         )
                         if (isBluray) Image(
                             painter = painterResource(R.drawable.media_logo_bluray),
                             contentDescription = "Blu-ray Disc",
-                            modifier = Modifier.height(logoHeight).width(logoHeight * 2.05f).graphicsLayer { alpha = .98f },
+                            modifier = Modifier.height(if (isUhd || isDvd) comboLogoHeight else singleLogoHeight).width(logoHeight * 2.3f).graphicsLayer { alpha = .98f },
                             contentScale = ContentScale.Fit,
                             colorFilter = ColorFilter.tint(Color.White)
                         )
                         if (isDvd) Image(
                             painter = painterResource(R.drawable.media_logo_dvd_video),
                             contentDescription = "DVD Video",
-                            modifier = Modifier.height(logoHeight).width(logoHeight * 1.75f).graphicsLayer { alpha = .98f },
+                            modifier = Modifier.height(if (isUhd || isBluray) comboLogoHeight else singleLogoHeight).width(logoHeight * 2.0f).graphicsLayer { alpha = .98f },
                             contentScale = ContentScale.Fit,
                             colorFilter = ColorFilter.tint(Color.White)
                         )

@@ -15,7 +15,7 @@ assert 'contentDescription = "DVD Video"' in case
 assert 'contentDescription = "Ultra HD Blu-ray"' in case
 cfg=(R/"movie_catalogue/config.py").read_text()
 g=(R/"android/app/build.gradle.kts").read_text()
-assert 'APP_VERSION = "0.3.70"' in cfg
-assert 'versionName = "0.3.38"' in g
-assert 'versionCode = 30' in g
+assert 'APP_VERSION = "0.3.71"' in cfg
+assert 'versionName = "0.3.39"' in g
+assert 'versionCode = 31' in g
 print("v0.3.67 Android web-case visual scale checks: PASS")

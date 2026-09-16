@@ -16,7 +16,7 @@ assert "Front Covers" in m and "Spines" in m
 assert "shelfViewMode" in store
 assert "detailsReturnScreen" in m
 assert "Screen.SHELF_DETAIL" in m and "Screen.COLLECTION_DETAIL" in m
-assert 'APP_VERSION = "0.3.70"' in cfg
-assert 'versionName = "0.3.38"' in gradle
-assert 'versionCode = 30' in gradle
+assert 'APP_VERSION = "0.3.71"' in cfg
+assert 'versionName = "0.3.39"' in gradle
+assert 'versionCode = 31' in gradle
 print("v0.3.62 Android session/shelf/navigation checks: PASS")

@@ -46,6 +46,8 @@ class MainActivity : ComponentActivity() {
 
 enum class Screen { LOGIN, LIBRARY, DETAILS, COLLECTIONS, COLLECTION_DETAIL, LOANS, LOAN_FORM, MORE, SHELF_DETAIL, SCANNER, BARCODE_RESULT }
 
+enum class ShelfViewMode { FRONT, SPINES }
+
 data class MovieGroup(val key: String, val primary: Movie, val copies: List<Movie>) {
     val formatsSummary: String
         get() = copies.groupingBy { it.format.ifBlank { "Unknown" } }.eachCount().entries
@@ -76,7 +78,9 @@ fun HomebusterApp(store: SessionStore) {
     var server by remember { mutableStateOf(store.serverUrl ?: "") }
     var token by remember { mutableStateOf(store.token) }
     var serverVersion by remember { mutableStateOf<String?>(null) }
+    var loginMessage by remember { mutableStateOf<String?>(null) }
     var screen by remember { mutableStateOf(if (token == null || server.isBlank()) Screen.LOGIN else Screen.LIBRARY) }
+    var detailsReturnScreen by remember { mutableStateOf(Screen.LIBRARY) }
     var selected by remember { mutableStateOf<MovieGroup?>(null) }
     var selectedCopy by remember { mutableStateOf<Movie?>(null) }
     var selectedCollection by remember { mutableStateOf<CollectionItem?>(null) }
@@ -86,7 +90,15 @@ fun HomebusterApp(store: SessionStore) {
     var activeLibraryId by remember { mutableStateOf<Int?>(null) }
     val api = remember(server, token) {
         if (token != null && (server.startsWith("http://") || server.startsWith("https://"))) {
-            runCatching { ApiFactory.create(server) }.getOrNull()
+            runCatching {
+                ApiFactory.create(server) {
+                    store.clearToken()
+                    token = null
+                    serverVersion = null
+                    loginMessage = "Session expired. The server was updated or your login session is no longer valid. Please sign in again."
+                    screen = Screen.LOGIN
+                }
+            }.getOrNull()
         } else null
     }
 
@@ -107,7 +119,8 @@ fun HomebusterApp(store: SessionStore) {
 
     val navigateBack: () -> Unit = {
         screen = when (screen) {
-            Screen.DETAILS, Screen.COLLECTIONS, Screen.LOANS, Screen.MORE, Screen.SCANNER, Screen.BARCODE_RESULT -> Screen.LIBRARY
+            Screen.DETAILS -> detailsReturnScreen
+            Screen.COLLECTIONS, Screen.LOANS, Screen.MORE, Screen.SCANNER, Screen.BARCODE_RESULT -> Screen.LIBRARY
             Screen.COLLECTION_DETAIL -> Screen.COLLECTIONS
             Screen.SHELF_DETAIL -> Screen.MORE
             Screen.LOAN_FORM -> Screen.DETAILS
@@ -118,7 +131,7 @@ fun HomebusterApp(store: SessionStore) {
 
     Surface(Modifier.fillMaxSize().systemBarsPadding(), color = HbBackground) {
         when (screen) {
-            Screen.LOGIN -> LoginScreen(server, { server = it }, localNetworkGranted, {
+            Screen.LOGIN -> LoginScreen(server, { server = it }, loginMessage, localNetworkGranted, {
                 if (Build.VERSION.SDK_INT >= 37) localNetworkPermissionLauncher.launch(Manifest.permission.ACCESS_LOCAL_NETWORK)
             }) { normalizedServer, newToken, detectedVersion ->
                 store.serverUrl = normalizedServer
@@ -126,12 +139,13 @@ fun HomebusterApp(store: SessionStore) {
                 server = normalizedServer
                 token = newToken
                 serverVersion = detectedVersion
+                loginMessage = null
                 screen = Screen.LIBRARY
             }
             Screen.LIBRARY -> LibraryScreen(
                 api!!, token!!, serverVersion, libraries, activeLibrary,
                 onLibrarySelected = { activeLibraryId = it.id },
-                onMovie = { selected = it; screen = Screen.DETAILS },
+                onMovie = { selected = it; detailsReturnScreen = Screen.LIBRARY; screen = Screen.DETAILS },
                 onCollections = { screen = Screen.COLLECTIONS },
                 onLoans = { screen = Screen.LOANS },
                 onMore = { screen = Screen.MORE },
@@ -148,7 +162,7 @@ fun HomebusterApp(store: SessionStore) {
                 onCollection = { selectedCollection = it; screen = Screen.COLLECTION_DETAIL },
                 onBack = navigateBack
             )
-            Screen.COLLECTION_DETAIL -> CollectionDetailScreen(api!!, token!!, selectedCollection!!, onMovie = { selected = it; screen = Screen.DETAILS }, onBack = navigateBack)
+            Screen.COLLECTION_DETAIL -> CollectionDetailScreen(api!!, token!!, selectedCollection!!, onMovie = { selected = it; detailsReturnScreen = Screen.COLLECTION_DETAIL; screen = Screen.DETAILS }, onBack = navigateBack)
             Screen.LOANS -> LoansScreen(api!!, token!!, navigateBack)
             Screen.LOAN_FORM -> LoanFormScreen(api!!, token!!, selectedCopy!!, navigateBack)
             Screen.MORE -> MoreScreen(
@@ -156,7 +170,7 @@ fun HomebusterApp(store: SessionStore) {
                 onShelf = { selectedShelf = it; screen = Screen.SHELF_DETAIL },
                 onBack = navigateBack
             )
-            Screen.SHELF_DETAIL -> ShelfDetailScreen(api!!, token!!, selectedShelf!!, onMovie = { selected = it; screen = Screen.DETAILS }, onBack = navigateBack)
+            Screen.SHELF_DETAIL -> ShelfDetailScreen(api!!, token!!, store, selectedShelf!!, onMovie = { selected = it; detailsReturnScreen = Screen.SHELF_DETAIL; screen = Screen.DETAILS }, onBack = navigateBack)
             Screen.SCANNER -> ScannerScreen(onCode = { code ->
                 scanned = BarcodeResponse(status = "loading", upc = code, movie = null, product = null, lookup = null)
                 screen = Screen.BARCODE_RESULT
@@ -183,6 +197,7 @@ private fun normalizeServerUrl(value: String): String {
 private fun LoginScreen(
     server: String,
     onServer: (String) -> Unit,
+    loginMessage: String?,
     localNetworkGranted: Boolean,
     onRequestLocalNetwork: () -> Unit,
     onLoggedIn: (String, String, String) -> Unit
@@ -196,6 +211,10 @@ private fun LoginScreen(
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val horizontal = if (maxWidth > 560.dp) (maxWidth - 520.dp) / 2 else 20.dp
         Column(Modifier.fillMaxSize().padding(horizontal = horizontal), verticalArrangement = Arrangement.Center) {
+            loginMessage?.let {
+                HomebusterPanel { Text(it, color = HbWarning) }
+                Spacer(Modifier.height(12.dp))
+            }
             HomebusterPanel {
                 Text("Homebuster", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.ExtraBold)
                 Text("Your movie & TV library, in your pocket.", color = HbMuted)
@@ -561,16 +580,30 @@ private fun CollectionDetailScreen(
         if (groups.isEmpty() && error == null) {
             HomebusterEmptyState("No media in this collection.")
         } else {
-            LazyVerticalGrid(
-                GridCells.Adaptive(48.dp),
-                modifier = Modifier.fillMaxSize()
-                    .background(Brush.verticalGradient(listOf(Color(0xFF24170F), Color(0xFF5A3822), Color(0xFF21140D)))),
-                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 14.dp, bottom = 24.dp),
-                horizontalArrangement = Arrangement.spacedBy(3.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp)
-            ) {
-                items(groups, key = { it.key }) { group ->
-                    HomebusterShelfCase(group) { onMovie(group) }
+            if (shelfViewMode == ShelfViewMode.FRONT) {
+                LazyVerticalGrid(
+                    GridCells.Adaptive(145.dp),
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 24.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(18.dp)
+                ) {
+                    items(groups, key = { it.key }) { group ->
+                        HomebusterShelfFrontCase(group) { onMovie(group) }
+                    }
+                }
+            } else {
+                LazyVerticalGrid(
+                    GridCells.Adaptive(48.dp),
+                    modifier = Modifier.fillMaxSize()
+                        .background(Brush.verticalGradient(listOf(Color(0xFF24170F), Color(0xFF5A3822), Color(0xFF21140D)))),
+                    contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 14.dp, bottom = 24.dp),
+                    horizontalArrangement = Arrangement.spacedBy(3.dp),
+                    verticalArrangement = Arrangement.spacedBy(18.dp)
+                ) {
+                    items(groups, key = { it.key }) { group ->
+                        HomebusterShelfSpine(group) { onMovie(group) }
+                    }
                 }
             }
         }
@@ -768,7 +801,64 @@ private fun MoreScreen(
 }
 
 @Composable
-private fun HomebusterShelfCase(group: MovieGroup, onClick: () -> Unit) {
+private fun HomebusterShelfFrontCase(group: MovieGroup, onClick: () -> Unit) {
+    val movie = group.primary
+    val format = movie.format.ifBlank { "Media" }
+    val plastic = when (format) {
+        "Blu-ray", "Blu-ray + DVD" -> Color(0xFF176CC0)
+        "4K", "4K UHD" -> Color(0xFF17191E)
+        "HD DVD" -> Color(0xFF8E2025)
+        "VHS" -> Color(0xFF292929)
+        "DVD" -> Color(0xFF252A31)
+        else -> Color(0xFF39414D)
+    }
+    val glow = when (format) {
+        "Blu-ray", "Blu-ray + DVD" -> Color(0xFF55A9EF)
+        "4K", "4K UHD" -> Color(0xFF62666E)
+        "HD DVD" -> Color(0xFFD24A50)
+        else -> Color(0xFF737E8E)
+    }
+    Column(
+        Modifier.fillMaxWidth().clickable(onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            Modifier.fillMaxWidth().aspectRatio(0.67f)
+                .graphicsLayer { shadowElevation = 10f }
+                .clip(RoundedCornerShape(9.dp))
+                .background(Brush.horizontalGradient(listOf(plastic, glow, plastic)))
+                .padding(start = 7.dp, end = 7.dp, top = 27.dp, bottom = 9.dp)
+        ) {
+            Box(
+                Modifier.matchParentSize().clip(RoundedCornerShape(2.dp)).background(Color(0xFF111318)),
+                contentAlignment = Alignment.Center
+            ) {
+                if (movie.posterUrl != null) {
+                    AsyncImage(
+                        model = movie.posterUrl,
+                        contentDescription = movie.title,
+                        modifier = Modifier.matchParentSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Text("🎬", style = MaterialTheme.typography.headlineLarge)
+                }
+            }
+            Box(
+                Modifier.align(Alignment.TopCenter).offset(y = (-24).dp).fillMaxWidth().height(21.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(format.uppercase(), color = Color.White, fontWeight = FontWeight.Black, style = MaterialTheme.typography.labelSmall)
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(movie.title, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        movie.year?.let { Text(it.toString(), color = HbMuted, style = MaterialTheme.typography.bodySmall) }
+    }
+}
+
+@Composable
+private fun HomebusterShelfSpine(group: MovieGroup, onClick: () -> Unit) {
     val movie = group.primary
     val format = movie.format.ifBlank { "Media" }
     val caseColor = when (format) {
@@ -846,12 +936,16 @@ private fun HomebusterShelfCase(group: MovieGroup, onClick: () -> Unit) {
 private fun ShelfDetailScreen(
     api: HomebusterApi,
     token: String,
+    store: SessionStore,
     shelf: Shelf,
     onMovie: (MovieGroup) -> Unit,
     onBack: () -> Unit
 ) {
     var movies by remember { mutableStateOf<List<Movie>>(emptyList()) }
     var error by remember { mutableStateOf<String?>(null) }
+    var shelfViewMode by remember(shelf.id) {
+        mutableStateOf(if (store.shelfViewMode == "spines") ShelfViewMode.SPINES else ShelfViewMode.FRONT)
+    }
     LaunchedEffect(shelf.id) {
         runCatching { api.shelfMovies("Bearer $token", shelf.id).movies }
             .onSuccess { movies = it }
@@ -863,6 +957,19 @@ private fun ShelfDetailScreen(
             HomebusterScreenHeader(shelf.name, onBack)
             shelf.description?.takeIf { it.isNotBlank() }?.let { Text(it, color = HbMuted) }
             error?.let { HomebusterErrorCard(it) }
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (shelfViewMode == ShelfViewMode.FRONT) {
+                    Button(onClick = {}) { Text("Front Covers") }
+                } else {
+                    OutlinedButton(onClick = { shelfViewMode = ShelfViewMode.FRONT; store.shelfViewMode = "front" }) { Text("Front Covers") }
+                }
+                if (shelfViewMode == ShelfViewMode.SPINES) {
+                    Button(onClick = {}) { Text("Spines") }
+                } else {
+                    OutlinedButton(onClick = { shelfViewMode = ShelfViewMode.SPINES; store.shelfViewMode = "spines" }) { Text("Spines") }
+                }
+            }
         }
         if (groups.isEmpty() && error == null) {
             HomebusterEmptyState("No media on this shelf.")

@@ -139,8 +139,16 @@ interface HomebusterApi {
 }
 
 object ApiFactory {
-    fun create(baseUrl: String): HomebusterApi {
+    fun create(baseUrl: String, onSessionExpired: () -> Unit = {}): HomebusterApi {
         val normalized = if (baseUrl.endsWith('/')) baseUrl else "$baseUrl/"
-        return Retrofit.Builder().baseUrl(normalized).client(OkHttpClient.Builder().build()).addConverterFactory(GsonConverterFactory.create()).build().create(HomebusterApi::class.java)
+        val client = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                val response = chain.proceed(chain.request())
+                val authenticated = chain.request().header("Authorization")?.startsWith("Bearer ") == true
+                if (response.code == 401 && authenticated) onSessionExpired()
+                response
+            }
+            .build()
+        return Retrofit.Builder().baseUrl(normalized).client(client).addConverterFactory(GsonConverterFactory.create()).build().create(HomebusterApi::class.java)
     }
 }

@@ -70,7 +70,15 @@ class SessionStore(context: Context) {
         get() = getSecure("token")
         set(value) = putSecure("token", value)
 
-    fun clear() {
+    fun clearToken() {
         prefs.edit().remove("token").apply()
+    }
+
+    var shelfViewMode: String
+        get() = prefs.getString("shelf_view_mode", "front") ?: "front"
+        set(value) = prefs.edit().putString("shelf_view_mode", value).apply()
+
+    fun clear() {
+        clearToken()
     }
 }

@@ -5,5 +5,5 @@ assert 'set_smart_collections' in libs and 'smart_collections_enabled' in settin
 assert 'Show dismissed collections' in tpl and 'Not interested' in tpl and 'Create Collection' in tpl
 assert '>HOMEBUSTER<' in base and '255,220,70' in css
 assert 'sync_physical_box_set_collection' in box
-assert 'APP_VERSION = "0.3.66"' in config
+assert 'APP_VERSION = "0.3.67"' in config
 print('v0.3.41 smart collection UI/source checks passed')

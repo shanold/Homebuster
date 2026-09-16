@@ -13,7 +13,7 @@ assert "HomebusterShelfSpine(group)" in shelf
 assert "HomebusterShelfCase" not in shelf
 cfg=(R/"movie_catalogue/config.py").read_text()
 gradle=(R/"android/app/build.gradle.kts").read_text()
-assert 'APP_VERSION = "0.3.66"' in cfg
-assert 'versionName = "0.3.34"' in gradle
-assert 'versionCode = 26' in gradle
+assert 'APP_VERSION = "0.3.67"' in cfg
+assert 'versionName = "0.3.35"' in gradle
+assert 'versionCode = 27' in gradle
 print("v0.3.63 shelf compile regression: PASS")

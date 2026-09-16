@@ -806,105 +806,101 @@ private fun MoreScreen(
 private fun HomebusterShelfFrontCase(group: MovieGroup, onClick: () -> Unit) {
     val movie = group.primary
     val format = movie.format.ifBlank { "Media" }
-    val (casePlasticDark, casePlastic, caseGlow) = when (format) {
-        "Blu-ray", "Blu-ray + DVD" -> Triple(Color(0xFF0B3767), Color(0xFF176CC0), Color(0xFF55A9EF))
-        "4K", "4K UHD" -> Triple(Color(0xFF020303), Color(0xFF151719), Color(0xFF34383C))
-        "DVD", "HD DVD", "VHS" -> Triple(Color(0xFF08090B), Color(0xFF25272B), Color(0xFF50545A))
+    val normalized = format.lowercase()
+    val isUhd = normalized.contains("4k") || normalized.contains("ultra hd") || normalized.contains("uhd")
+    val isBluray = normalized.contains("blu-ray") || normalized.contains("blu ray")
+    val isDvd = Regex("\\bdvd\\b").containsMatchIn(normalized)
+    val (casePlasticDark, casePlastic, caseGlow) = when {
+        isUhd -> Triple(Color(0xFF020303), Color(0xFF151719), Color(0xFF34383C))
+        isBluray -> Triple(Color(0xFF0B3767), Color(0xFF176CC0), Color(0xFF55A9EF))
+        isDvd -> Triple(Color(0xFF08090B), Color(0xFF25272B), Color(0xFF50545A))
         else -> Triple(Color(0xFF15191F), Color(0xFF414956), Color(0xFF687384))
     }
+
     Column(
         Modifier.fillMaxWidth().clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Box(
-            Modifier.fillMaxWidth()
-                .graphicsLayer { shadowElevation = 18f }
-                .clip(RoundedCornerShape(12.dp, 12.dp, 8.dp, 8.dp))
-                .background(
-                    Brush.horizontalGradient(
-                        listOf(casePlasticDark, casePlastic, caseGlow, casePlastic, casePlasticDark)
-                    )
-                )
-                .padding(start = 10.dp, top = 43.dp, end = 10.dp, bottom = 13.dp)
-        ) {
-            HomebusterCaseTopRidge()
-            HomebusterCaseHinge()
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            // The web case is designed at 306px wide. Scale every shell measurement
+            // from that same reference instead of treating CSS pixels as fixed dp.
+            val caseWidth = maxWidth
+            val topInset = caseWidth * (43f / 306f)
+            val sideInset = caseWidth * (10f / 306f)
+            val bottomInset = caseWidth * (13f / 306f)
+            val ridgeTop = caseWidth * (7f / 306f)
+            val ridgeHeight = caseWidth * (29f / 306f)
+            val hingeTop = caseWidth * (48f / 306f)
+            val hingeBottom = caseWidth * (18f / 306f)
+            val hingeWidth = caseWidth * (5f / 306f)
+            val shellRadius = caseWidth * (12f / 306f)
+
             Box(
                 Modifier.fillMaxWidth()
-                    .padding(3.dp)
-                    .background(Color(0xFF09101A))
-                    .aspectRatio(2f / 3f),
-                contentAlignment = Alignment.Center
+                    .graphicsLayer { shadowElevation = 18f }
+                    .clip(RoundedCornerShape(shellRadius, shellRadius, shellRadius * .67f, shellRadius * .67f))
+                    .background(Brush.horizontalGradient(listOf(casePlasticDark, casePlastic, caseGlow, casePlastic, casePlasticDark)))
+                    .padding(start = sideInset, top = topInset, end = sideInset, bottom = bottomInset)
             ) {
-                if (movie.posterUrl != null) {
-                    AsyncImage(
-                        model = movie.posterUrl,
-                        contentDescription = movie.title,
-                        modifier = Modifier.matchParentSize(),
-                        contentScale = ContentScale.Crop
-                    )
-                } else {
-                    Text("🎬", style = MaterialTheme.typography.headlineLarge, color = Color(0xFF68758D))
+                Box(
+                    Modifier.align(Alignment.TopCenter)
+                        .offset(y = -(topInset - ridgeTop))
+                        .fillMaxWidth()
+                        .height(ridgeHeight)
+                        .clip(RoundedCornerShape(shellRadius * .58f))
+                        .background(Brush.verticalGradient(listOf(Color(0x38FFFFFF), Color(0x08FFFFFF), Color(0x16000000), Color.Transparent)))
+                )
+                Box(
+                    Modifier.align(Alignment.CenterStart)
+                        .offset(x = -(sideInset * .6f), y = (hingeTop - hingeBottom) * .04f)
+                        .width(hingeWidth)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(Brush.horizontalGradient(listOf(Color(0x70000000), Color(0x42FFFFFF), Color(0x50000000))))
+                )
+                Box(
+                    Modifier.fillMaxWidth()
+                        .padding(caseWidth * (3f / 306f))
+                        .background(Color(0xFF09101A))
+                        .aspectRatio(2f / 3f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (movie.posterUrl != null) {
+                        AsyncImage(
+                            model = movie.posterUrl,
+                            contentDescription = movie.title,
+                            modifier = Modifier.matchParentSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Text("🎬", style = MaterialTheme.typography.headlineLarge, color = Color(0xFF68758D))
+                    }
                 }
+                Box(
+                    Modifier.align(Alignment.TopCenter)
+                        .offset(y = -(topInset - ridgeTop))
+                        .fillMaxWidth()
+                        .height(ridgeHeight),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        if (isUhd) Text("Ultra HD Blu-ray", color = Color.White, fontWeight = FontWeight.Black, style = MaterialTheme.typography.labelSmall)
+                        if (isBluray) Text("Blu-ray Disc", color = Color.White, fontWeight = FontWeight.Bold, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, style = MaterialTheme.typography.labelSmall)
+                        if (isDvd) Text("DVD Video", color = Color.White, fontWeight = FontWeight.Black, style = MaterialTheme.typography.labelSmall)
+                        if (!isUhd && !isBluray && !isDvd) Text(format, color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+                Box(
+                    Modifier.matchParentSize()
+                        .clip(RoundedCornerShape(shellRadius, shellRadius, shellRadius * .67f, shellRadius * .67f))
+                        .background(Brush.verticalGradient(listOf(Color(0x12FFFFFF), Color.Transparent, Color(0x30000000))))
+                )
             }
-            HomebusterCaseFormatLogo(format)
-            HomebusterCasePlasticOverlay()
         }
         Spacer(Modifier.height(6.dp))
         Text(movie.title, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
         movie.year?.let { Text(it.toString(), color = HbMuted, style = MaterialTheme.typography.bodySmall) }
     }
-}
-
-@Composable
-private fun BoxScope.HomebusterCaseTopRidge() {
-    Box(
-        Modifier.align(Alignment.TopCenter)
-            .offset(y = (-36).dp)
-            .fillMaxWidth()
-            .height(29.dp)
-            .clip(RoundedCornerShape(7.dp, 7.dp, 3.dp, 3.dp))
-            .background(Brush.verticalGradient(listOf(Color(0x38FFFFFF), Color(0x08FFFFFF), Color(0x16000000), Color.Transparent)))
-    )
-}
-
-@Composable
-private fun BoxScope.HomebusterCaseHinge() {
-    Box(
-        Modifier.align(Alignment.CenterStart)
-            .offset(x = (-6).dp)
-            .width(5.dp)
-            .fillMaxHeight()
-            .clip(RoundedCornerShape(4.dp))
-            .background(Brush.horizontalGradient(listOf(Color(0x70000000), Color(0x42FFFFFF), Color(0x50000000))))
-    )
-}
-
-@Composable
-private fun BoxScope.HomebusterCaseFormatLogo(format: String) {
-    Box(
-        Modifier.align(Alignment.TopCenter)
-            .offset(y = (-37).dp)
-            .fillMaxWidth()
-            .height(27.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            format.uppercase(),
-            color = Color(0xFFF4F5F6),
-            fontWeight = FontWeight.Black,
-            style = MaterialTheme.typography.labelMedium
-        )
-    }
-}
-
-@Composable
-private fun BoxScope.HomebusterCasePlasticOverlay() {
-    Box(
-        Modifier.matchParentSize()
-            .clip(RoundedCornerShape(12.dp, 12.dp, 8.dp, 8.dp))
-            .background(Brush.verticalGradient(listOf(Color(0x12FFFFFF), Color.Transparent, Color(0x30000000))))
-    )
 }
 
 @Composable

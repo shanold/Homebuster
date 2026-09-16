@@ -15,5 +15,5 @@ assert shared.exists()
 assert 'from .barcode_matching import barcode_tmdb_matches' in mobile
 assert 'def _barcode_tmdb_matches' not in mobile
 assert 'barcode' in cat[cat.index('def movie_new_manual'):cat.index('@bp.get("/libraries/<int:library_id>/movies/<int:movie_id>")')]
-assert 'APP_VERSION = "0.3.66"' in config
+assert 'APP_VERSION = "0.3.67"' in config
 print('v0.3.57 web barcode/media checks: PASS')

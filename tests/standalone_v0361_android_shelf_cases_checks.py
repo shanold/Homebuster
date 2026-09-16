@@ -10,7 +10,7 @@ assert "ShelfDetailScreen" in main
 section=main[main.index("private fun ShelfDetailScreen"):]
 assert "HomebusterShelfCase(group)" in section
 assert "HomebusterMovieCard(group)" not in section.split("@Composable",1)[0]
-assert 'APP_VERSION = "0.3.65"' in cfg
-assert 'versionName = "0.3.33"' in gradle
-assert 'versionCode = 25' in gradle
+assert 'APP_VERSION = "0.3.66"' in cfg
+assert 'versionName = "0.3.34"' in gradle
+assert 'versionCode = 26' in gradle
 print("v0.3.61 Android shelf case checks: PASS")

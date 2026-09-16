@@ -25,5 +25,5 @@ assert list_opacity and float(list_opacity.group(1)) >= .60, 'list artwork still
 spine = re.search(r'\.shelf-case-spine\{[^}]*background-image:linear-gradient\(90deg,rgba\(8,10,15,([0-9.]+)\)', css)
 assert spine and float(spine.group(1)) <= .65, 'shelf spine dark overlay still too strong'
 
-assert any(v in config for v in ('APP_VERSION = "0.3.65"', 'APP_VERSION = "0.3.65"', 'APP_VERSION = "0.3.65"', 'APP_VERSION = "0.3.65"', 'APP_VERSION = "0.3.65"', 'APP_VERSION = "0.3.65"', 'APP_VERSION = "0.3.65"'))
+assert any(v in config for v in ('APP_VERSION = "0.3.66"', 'APP_VERSION = "0.3.66"', 'APP_VERSION = "0.3.66"', 'APP_VERSION = "0.3.66"', 'APP_VERSION = "0.3.66"', 'APP_VERSION = "0.3.66"', 'APP_VERSION = "0.3.66"'))
 print('v0.3.35 shelf pagination/brightness checks passed')

@@ -825,7 +825,7 @@ private fun HomebusterShelfFrontCase(group: MovieGroup, onClick: () -> Unit) {
                         listOf(casePlasticDark, casePlastic, caseGlow, casePlastic, casePlasticDark)
                     )
                 )
-                .padding(top = 43.dp, horizontal = 10.dp, bottom = 13.dp)
+                .padding(start = 10.dp, top = 43.dp, end = 10.dp, bottom = 13.dp)
         ) {
             HomebusterCaseTopRidge()
             HomebusterCaseHinge()

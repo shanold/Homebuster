@@ -14,5 +14,5 @@ for verb in ['@PATCH("api/v1/movies/{id}")','@DELETE("api/v1/movies/{id}")','@PO
 for label in ['"Media"','"Collections"','"Loans"','"More"']:
     assert label in main, label
 assert "Shelves" in main and "Edit media" in main and "Loan media" in main
-assert 'APP_VERSION = "0.3.65"' in cfg
+assert 'APP_VERSION = "0.3.66"' in cfg
 print("v0.3.58 Android client checks: PASS")

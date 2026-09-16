@@ -883,10 +883,25 @@ private fun HomebusterShelfFrontCase(group: MovieGroup, onClick: () -> Unit) {
                         .height(ridgeHeight),
                     contentAlignment = Alignment.Center
                 ) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        if (isUhd) Text("Ultra HD Blu-ray", color = Color.White, fontWeight = FontWeight.Black, style = MaterialTheme.typography.labelSmall)
-                        if (isBluray) Text("Blu-ray Disc", color = Color.White, fontWeight = FontWeight.Bold, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, style = MaterialTheme.typography.labelSmall)
-                        if (isDvd) Text("DVD Video", color = Color.White, fontWeight = FontWeight.Black, style = MaterialTheme.typography.labelSmall)
+                    Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+                        if (isUhd) AsyncImage(
+                            model = "https://upload.wikimedia.org/wikipedia/commons/7/71/UHD_Blu-ray_logo.png",
+                            contentDescription = "Ultra HD Blu-ray",
+                            modifier = Modifier.height(ridgeHeight * .72f).width(ridgeHeight * 1.9f),
+                            contentScale = ContentScale.Fit
+                        )
+                        if (isBluray) AsyncImage(
+                            model = "https://upload.wikimedia.org/wikipedia/commons/8/8c/Blu_ray_logo.png",
+                            contentDescription = "Blu-ray Disc",
+                            modifier = Modifier.height(ridgeHeight * .72f).width(ridgeHeight * 1.35f),
+                            contentScale = ContentScale.Fit
+                        )
+                        if (isDvd) AsyncImage(
+                            model = "https://upload.wikimedia.org/wikipedia/commons/7/78/DVD_video_logo.png",
+                            contentDescription = "DVD Video",
+                            modifier = Modifier.height(ridgeHeight * .72f).width(ridgeHeight * 1.25f),
+                            contentScale = ContentScale.Fit
+                        )
                         if (!isUhd && !isBluray && !isDvd) Text(format, color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
                     }
                 }

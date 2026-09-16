@@ -14,5 +14,5 @@ assert 'sqlite3.IntegrityError' in admin
 assert 'name="is_admin"' in tpl
 assert 'action="{{ url_for(\'admin.create_user\') }}"' in tpl
 assert 'minlength="{{ password_min_length }}"' in tpl
-assert 'APP_VERSION = "0.3.67"' in cfg
+assert 'APP_VERSION = "0.3.68"' in cfg
 print("v0.3.53 admin create-user checks: PASS")

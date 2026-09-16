@@ -13,7 +13,7 @@ assert "casePlasticDark" in case and "casePlastic" in case and "caseGlow" in cas
 assert "Blu-ray Disc" in case
 cfg=(R/"movie_catalogue/config.py").read_text()
 gradle=(R/"android/app/build.gradle.kts").read_text()
-assert 'APP_VERSION = "0.3.67"' in cfg
-assert 'versionName = "0.3.35"' in gradle
-assert 'versionCode = 27' in gradle
+assert 'APP_VERSION = "0.3.68"' in cfg
+assert 'versionName = "0.3.36"' in gradle
+assert 'versionCode = 28' in gradle
 print("v0.3.65 Android/web case parity checks: PASS")

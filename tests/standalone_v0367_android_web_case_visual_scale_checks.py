@@ -10,12 +10,12 @@ assert "val bottomInset = caseWidth * (13f / 306f)" in case
 assert "val ridgeTop = caseWidth * (7f / 306f)" in case
 assert "val ridgeHeight = caseWidth * (29f / 306f)" in case
 assert 'Text("DVD")' not in case
-assert "Blu-ray Disc" in case
-assert "DVD Video" in case
-assert "Ultra HD Blu-ray" in case
+assert 'contentDescription = "Blu-ray Disc"' in case
+assert 'contentDescription = "DVD Video"' in case
+assert 'contentDescription = "Ultra HD Blu-ray"' in case
 cfg=(R/"movie_catalogue/config.py").read_text()
 g=(R/"android/app/build.gradle.kts").read_text()
-assert 'APP_VERSION = "0.3.67"' in cfg
-assert 'versionName = "0.3.35"' in g
-assert 'versionCode = 27' in g
+assert 'APP_VERSION = "0.3.68"' in cfg
+assert 'versionName = "0.3.36"' in g
+assert 'versionCode = 28' in g
 print("v0.3.67 Android web-case visual scale checks: PASS")

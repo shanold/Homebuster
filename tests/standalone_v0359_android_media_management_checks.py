@@ -17,7 +17,7 @@ assert '@GET("api/v1/shelves/{id}/movies")' in kt
 assert 'loanedDate' in kt
 assert '@bp.get("/shelves/<int:shelf_id>/movies")' in api
 assert 'loaned_date = str(data.get("loaned_date")' in api
-assert 'APP_VERSION = "0.3.67"' in cfg
-assert 'versionName = "0.3.35"' in (R/"android/app/build.gradle.kts").read_text()
-assert 'versionCode = 27' in (R/"android/app/build.gradle.kts").read_text()
+assert 'APP_VERSION = "0.3.68"' in cfg
+assert 'versionName = "0.3.36"' in (R/"android/app/build.gradle.kts").read_text()
+assert 'versionCode = 28' in (R/"android/app/build.gradle.kts").read_text()
 print("v0.3.59 Android media management checks: PASS")

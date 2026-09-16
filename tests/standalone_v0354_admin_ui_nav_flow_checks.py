@@ -12,5 +12,5 @@ assert '.admin-add-user-card' in css and 'margin-bottom:' in css[css.index('.adm
 admin_block="{% if current_user.is_admin %}<div class=\"film-cell film-cell-admin\"><a href=\"{{ url_for('admin.users') }}\">Site Admin</a></div>{% endif %}"
 assert admin_block in base
 assert "{% else %}<div class=\"film-cell film-cell-empty\"" not in base[base.index('film-cell-libraries'):base.index('film-cell-user')]
-assert 'APP_VERSION = "0.3.67"' in cfg
+assert 'APP_VERSION = "0.3.68"' in cfg
 print("v0.3.54 admin UI/nav flow checks: PASS")

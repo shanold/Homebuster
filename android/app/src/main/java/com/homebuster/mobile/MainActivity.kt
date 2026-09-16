@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -885,24 +886,28 @@ private fun HomebusterShelfFrontCase(group: MovieGroup, onClick: () -> Unit) {
                         .height(ridgeHeight),
                     contentAlignment = Alignment.Center
                 ) {
+                    val logoHeight = ridgeHeight * .90f
                     Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
                         if (isUhd) Image(
                             painter = painterResource(R.drawable.media_logo_uhd_bluray),
                             contentDescription = "Ultra HD Blu-ray",
-                            modifier = Modifier.height(ridgeHeight * .72f).width(ridgeHeight * 1.9f),
-                            contentScale = ContentScale.Fit
+                            modifier = Modifier.height(logoHeight).width(logoHeight * 2.65f).graphicsLayer { alpha = .98f },
+                            contentScale = ContentScale.Fit,
+                            colorFilter = ColorFilter.tint(Color.White)
                         )
                         if (isBluray) Image(
                             painter = painterResource(R.drawable.media_logo_bluray),
                             contentDescription = "Blu-ray Disc",
-                            modifier = Modifier.height(ridgeHeight * .72f).width(ridgeHeight * 1.35f),
-                            contentScale = ContentScale.Fit
+                            modifier = Modifier.height(logoHeight).width(logoHeight * 2.05f).graphicsLayer { alpha = .98f },
+                            contentScale = ContentScale.Fit,
+                            colorFilter = ColorFilter.tint(Color.White)
                         )
                         if (isDvd) Image(
                             painter = painterResource(R.drawable.media_logo_dvd_video),
                             contentDescription = "DVD Video",
-                            modifier = Modifier.height(ridgeHeight * .72f).width(ridgeHeight * 1.25f),
-                            contentScale = ContentScale.Fit
+                            modifier = Modifier.height(logoHeight).width(logoHeight * 1.75f).graphicsLayer { alpha = .98f },
+                            contentScale = ContentScale.Fit,
+                            colorFilter = ColorFilter.tint(Color.White)
                         )
                         if (!isUhd && !isBluray && !isDvd) Text(format, color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
                     }

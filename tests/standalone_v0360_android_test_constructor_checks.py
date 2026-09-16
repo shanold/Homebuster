@@ -11,7 +11,7 @@ assert 'title = "Alien"' in test
 assert 'posterPath = "/abc.jpg"' in test
 assert 'format = "Blu-ray"' in test
 assert 'watched = false' in test
-assert 'APP_VERSION = "0.3.69"' in cfg
-assert 'versionName = "0.3.37"' in gradle
-assert 'versionCode = 29' in gradle
+assert 'APP_VERSION = "0.3.70"' in cfg
+assert 'versionName = "0.3.38"' in gradle
+assert 'versionCode = 30' in gradle
 print("v0.3.60 Android constructor regression: PASS")

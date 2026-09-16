@@ -5,7 +5,7 @@ assert ".padding(top = 43.dp, horizontal = 10.dp, bottom = 13.dp)" not in m
 assert ".padding(start = sideInset, top = topInset, end = sideInset, bottom = bottomInset)" in m
 cfg=(R/"movie_catalogue/config.py").read_text()
 g=(R/"android/app/build.gradle.kts").read_text()
-assert 'APP_VERSION = "0.3.69"' in cfg
-assert 'versionName = "0.3.37"' in g
-assert 'versionCode = 29' in g
+assert 'APP_VERSION = "0.3.70"' in cfg
+assert 'versionName = "0.3.38"' in g
+assert 'versionCode = 30' in g
 print("v0.3.66 Compose padding compile regression: PASS")
